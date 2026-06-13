@@ -45,6 +45,8 @@
     .docs .upload { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
     .docs .upload select, .docs .upload input[type=file] { font-size: .85rem; padding: 4px; width: auto; }
     .docs .upload button { width: auto; padding: 6px 12px; margin: 0; }
+    .docs .u-lbl { font-weight: 600; font-size: .8rem; margin: 0 0 0 2px; display: inline; }
+    .docs .u-kid-wrap { display: inline-flex; align-items: center; gap: 4px; }
   </style>
 </head>
 <body>
@@ -220,10 +222,12 @@
 
     function uploadForm(periodId) {
       return `<div class="upload" data-pid="${periodId}">` +
+        `<label class="u-lbl">סוג</label>` +
         `<select class="u-kind"><option value="electricity_bill">חשבון חשמל</option>` +
         `<option value="water_bill">חשבון מים</option><option value="meter_photo">תמונת מונה</option></select>` +
-        `<select class="u-kid"><option value="">—</option>` +
-        window.store.KID_ORDER.map((n) => `<option value="${n}">${n}</option>`).join('') + `</select>` +
+        `<span class="u-kid-wrap" style="display:none"><label class="u-lbl">ילד</label>` +
+        `<select class="u-kid"><option value="">בחר…</option>` +
+        window.store.KID_ORDER.map((n) => `<option value="${n}">${n}</option>`).join('') + `</select></span>` +
         `<input type="file" class="u-file" /><button class="u-go">העלה</button></div>`;
     }
 
@@ -252,6 +256,12 @@
     }
 
     function wireDocActions() {
+      document.querySelectorAll('#periods .u-kind').forEach((sel) => {
+        const wrap = sel.closest('.upload').querySelector('.u-kid-wrap');
+        const toggle = () => { wrap.style.display = sel.value === 'meter_photo' ? 'inline-flex' : 'none'; };
+        sel.addEventListener('change', toggle);
+        toggle();
+      });
       document.querySelectorAll('#periods .dl').forEach((a) => a.addEventListener('click', async () => {
         try { window.open(await window.store.signedUrl(a.dataset.path), '_blank'); }
         catch (e) { alert('הורדה נכשלה: ' + (e.message || e)); }
