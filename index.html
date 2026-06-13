@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>חשבונות בית</title>
+  <style>
+    :root { --bg:#f5f5f7; --card:#fff; --accent:#0a7d3c; --text:#1c1c1e; --up:#c0392b; --down:#0a7d3c; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; background: var(--bg);
+           color: var(--text); margin: 0; padding: 16px; direction: rtl; }
+    h1 { font-size: 1.4rem; text-align: center; }
+    h2 { font-size: 1.05rem; margin: 0 0 8px; }
+    .card { background: var(--card); border-radius: 14px; padding: 16px; margin: 0 auto 16px;
+            max-width: 520px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    label { display: block; font-weight: 600; margin: 10px 0 4px; }
+    input { width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #ccc;
+            border-radius: 8px; text-align: right; }
+    .kid-row { border-top: 1px solid #eee; padding-top: 10px; margin-top: 10px; }
+    button { width: 100%; padding: 12px; font-size: 1rem; font-weight: 700; color: #fff;
+             background: var(--accent); border: none; border-radius: 10px; margin-top: 12px;
+             cursor: pointer; }
+    button.secondary { background: #555; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { padding: 8px; text-align: right; border-bottom: 1px solid #eee; }
+    pre { white-space: pre-wrap; background: #f0f0f2; padding: 12px; border-radius: 10px;
+          direction: rtl; font-family: inherit; }
+    .up { color: var(--up); font-weight: 700; }
+    .down { color: var(--down); font-weight: 700; }
+    .legend { margin: 4px 0 8px; }
+    .legend .lg { margin-left: 14px; font-size: .85rem; white-space: nowrap; }
+    .legend .lg i { display: inline-block; width: 11px; height: 11px; border-radius: 2px;
+                    margin-left: 5px; vertical-align: middle; }
+    #chart svg { display: block; width: 100%; height: auto; }
+    .hint { color: #888; font-size: .8rem; margin-top: 6px; }
+    .msg { border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: .9rem; }
+    .msg.err { background: #fdecea; color: #9b1c14; }
+    .msg.warn { background: #fff6e0; color: #8a5a00; }
+    .row-btns { display: flex; gap: 10px; }
+    .row-btns button { margin-top: 0; }
+  </style>
+</head>
+<body>
+  <h1>🏠 חשבונות בית</h1>
+  <div id="authBar" style="text-align:center; margin-bottom:8px;"></div>
+
+  <div class="card">
+    <label>תקופה</label>
+    <input id="period" placeholder="יוני 2026" />
+    <label>סכום חשבון מים (₪)</label>
+    <input id="waterTotal" type="number" inputmode="decimal" />
+    <label>תעריף לקוט"ש (₪)</label>
+    <input id="tariff" type="number" inputmode="decimal" step="0.01" />
+    <div id="kids"></div>
+    <button id="calcBtn">חשב</button>
+    <div id="validation"></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <table id="resultTable"></table>
+    <pre id="message"></pre>
+    <button id="copyBtn">העתק הודעה ל-WhatsApp</button>
+    <button id="saveBtn" class="secondary">שמור מחזור (קריאות → קודמות)</button>
+  </div>
+
+  <div class="card" id="periodsCard" style="display:none">
+    <h2>🧾 תקופות קודמות</h2>
+    <div id="periods"></div>
+  </div>
+
+  <div class="card" id="trendCard" style="display:none">
+    <h2>📈 מגמת צריכה יומית (קוט"ש ליום)</h2>
+    <div id="legend" class="legend"></div>
+    <div id="chart"></div>
+    <div class="hint">מנורמל לפי ימים בין קריאות — משווה עוצמת צריכה אמיתית, ללא תלות באורך התקופה.</div>
+  </div>
+
+  <div class="card" id="backupCard">
+    <h2>💾 גיבוי נתונים</h2>
+    <button id="exportBtn" class="secondary">ייצא גיבוי (JSON)</button>
+    <div class="hint">מוריד עותק JSON של כל הנתונים מהענן (גיבוי נוסף מעבר ל-Supabase).</div>
+  </div>
+
+  <script src="calc.js"></script>
+  <script src="format.js"></script>
+  <script src="history.js"></script>
+  <script src="validate.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="store-map.js"></script>
+  <script src="store.js"></script>
+  <script>
+    const DEFAULT_KIDS = window.store.KID_ORDER;
+    let state = { kids: DEFAULT_KIDS.map((name) => ({ name, lastReading: 0 })), history: [] };
+    let session = null;
+
+    async function boot() {
+      window.store.initSupabase();
+      session = await window.store.getSession();
+      state = await window.store.loadState();
+      applyAuthMode();
+      renderKidInputs();
+      renderTrends();
+      renderPeriods();
+    }
+
+    function renderKidInputs() {
+      const c = document.getElementById('kids');
+      c.innerHTML = '';
+      state.kids.forEach((k, i) => {
+        const row = document.createElement('div');
+        row.className = 'kid-row';
+        row.innerHTML =
+          `<label>${k.name} — קריאה קודמת</label>` +
+          `<input class="prevInput" type="number" inputmode="decimal" data-i="${i}" value="${k.lastReading}" />` +
+          `<label>${k.name} — קריאה נוכחית</label>` +
+          `<input class="curInput" type="number" inputmode="decimal" data-i="${i}" />`;
+        c.appendChild(row);
+      });
+    }
+
+    const KID_COLORS = { 'ירין': '#1f77b4', 'גל': '#e8820c', 'ניב': '#2ca02c' };
+
+    // Build a shared x-axis of datable cycles and a per-kid daily-rate lookup.
+    function buildChartData() {
+      const cyclesByLabel = new Map();
+      const rates = {};
+      state.kids.forEach((k) => {
+        const lut = {};
+        window.dailySeries(state.history, k.name).forEach((p) => {
+          lut[p.label] = p.rate;
+          if (!cyclesByLabel.has(p.label)) cyclesByLabel.set(p.label, { label: p.label, date: p.date });
+        });
+        rates[k.name] = lut;
+      });
+      const cycles = [...cyclesByLabel.values()].sort((a, b) => new Date(a.date) - new Date(b.date));
+      return { cycles, rates };
+    }
+
+    function renderTrends() {
+      const card = document.getElementById('trendCard');
+      const { cycles, rates } = buildChartData();
+      if (cycles.length < 2) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+
+      document.getElementById('legend').innerHTML = state.kids.map((k) =>
+        `<span class="lg"><i style="background:${KID_COLORS[k.name] || '#888'}"></i>${k.name}</span>`
+      ).join('');
+
+      const W = 520, H = 250, mL = 36, mR = 26, mT = 12, mB = 62;
+      const px0 = mL, px1 = W - mR, py0 = mT, py1 = H - mB;
+      let maxRate = 0;
+      state.kids.forEach((k) => cycles.forEach((c) => {
+        const r = rates[k.name][c.label];
+        if (r != null && r > maxRate) maxRate = r;
+      }));
+      maxRate = Math.ceil(maxRate / 5) * 5 || 1;
+      const X = (i) => px0 + (cycles.length === 1 ? 0 : (i * (px1 - px0)) / (cycles.length - 1));
+      const Y = (r) => py1 - (r / maxRate) * (py1 - py0);
+
+      let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" font-family="inherit">`;
+      const yMid = (py0 + py1) / 2;
+      svg += `<text x="11" y="${yMid}" text-anchor="middle" font-size="9" fill="#888" transform="rotate(-90 11 ${yMid})">קוט"ש/יום</text>`;
+      [0, 0.5, 1].forEach((f) => {
+        const y = py1 - f * (py1 - py0);
+        svg += `<line x1="${px0}" y1="${y}" x2="${px1}" y2="${y}" stroke="#eee"/>`;
+        svg += `<text x="${px0 - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#888">${Math.round(maxRate * f)}</text>`;
+      });
+      cycles.forEach((c, i) => {
+        const x = X(i), ly = py1 + 14;
+        svg += `<text x="${x}" y="${ly}" text-anchor="middle" font-size="8.5" fill="#888" transform="rotate(-30 ${x} ${ly})">${c.label}</text>`;
+      });
+      state.kids.forEach((k) => {
+        const col = KID_COLORS[k.name] || '#888';
+        const pts = cycles.map((c, i) => {
+          const r = rates[k.name][c.label];
+          return r == null ? null : `${X(i).toFixed(1)},${Y(r).toFixed(1)}`;
+        }).filter(Boolean);
+        svg += `<polyline points="${pts.join(' ')}" fill="none" stroke="${col}" stroke-width="2"/>`;
+        cycles.forEach((c, i) => {
+          const r = rates[k.name][c.label];
+          if (r == null) return;
+          svg += `<circle cx="${X(i).toFixed(1)}" cy="${Y(r).toFixed(1)}" r="2.6" fill="${col}">` +
+            `<title>${k.name} ${c.label}: ${r.toFixed(1)} קוט"ש/יום</title></circle>`;
+        });
+      });
+      document.getElementById('chart').innerHTML = svg + '</svg>';
+    }
+
+    function applyAuthMode() {
+      const editor = !!session;
+      document.querySelector('.card').style.display = editor ? 'block' : 'none';
+      document.getElementById('backupCard').style.display = editor ? 'block' : 'none';
+      document.getElementById('authBar').innerHTML = editor
+        ? `<button id="logoutBtn" class="secondary" style="width:auto;padding:6px 14px">התנתק (עורך)</button>`
+        : `<button id="loginBtn" class="secondary" style="width:auto;padding:6px 14px">התחבר (עורך)</button>`;
+      const lb = document.getElementById('loginBtn');
+      if (lb) lb.addEventListener('click', async () => {
+        const email = prompt('הזן אימייל לקבלת קישור כניסה:');
+        if (!email) return;
+        const { error } = await window.store.signIn(email.trim());
+        alert(error ? ('שגיאה: ' + error.message) : 'נשלח קישור כניסה למייל. פתח אותו במכשיר הזה.');
+      });
+      const ob = document.getElementById('logoutBtn');
+      if (ob) ob.addEventListener('click', async () => { await window.store.signOut(); location.reload(); });
+    }
+
+    function renderPeriods() {
+      const host = document.getElementById('periods');
+      const card = document.getElementById('periodsCard');
+      if (!state.history.length) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      host.innerHTML = state.history.slice().reverse().map((h) => {
+        const kids = Object.keys(h.kids).map((name) => ({
+          name, consumption: h.kids[name].c, electricity: h.kids[name].e,
+          water: h.waterShare, total: h.kids[name].e + h.waterShare,
+        }));
+        const msg = window.formatMessage({
+          period: h.label, waterTotal: h.waterShare * 4, tariff: h.tariff, waterShare: h.waterShare, kids,
+        });
+        return `<pre>${msg}</pre>`;
+      }).join('');
+    }
+
+    let lastResults = null;
+
+    function pctCell(k) {
+      if (k.prevE === null || k.prevE === undefined) return '<td>—</td>';
+      const cls = k.pct >= 0 ? 'up' : 'down';
+      const sign = k.pct >= 0 ? '+' : '';
+      const flag = k.anomaly ? ' ⚠️' : '';
+      return `<td class="${cls}">${sign}${k.pct}%${flag}</td>`;
+    }
+
+    function renderValidation(errors, warnings) {
+      const host = document.getElementById('validation');
+      host.innerHTML =
+        errors.map((e) => `<div class="msg err">⛔ ${e}</div>`).join('') +
+        warnings.map((w) => `<div class="msg warn">⚠️ ${w}</div>`).join('');
+    }
+
+    document.getElementById('calcBtn').addEventListener('click', () => {
+      const period = document.getElementById('period').value.trim();
+      const waterTotal = parseFloat(document.getElementById('waterTotal').value);
+      const tariff = parseFloat(document.getElementById('tariff').value);
+      const prevInputs = document.querySelectorAll('#kids .prevInput');
+      const currentInputs = document.querySelectorAll('#kids .curInput');
+      const kids = state.kids.map((k, i) => ({
+        name: k.name,
+        prev: parseFloat(prevInputs[i].value) || 0,
+        current: parseFloat(currentInputs[i].value),
+      }));
+
+      const { errors, warnings } = window.validateCycle({ waterTotal, tariff, kids });
+      renderValidation(errors, warnings);
+      if (errors.length) {
+        document.getElementById('resultCard').style.display = 'none';
+        lastResults = null;
+        return;
+      }
+
+      const raw = window.computeCycle({ period, waterTotal, tariff, kids });
+      lastResults = window.compareCycle(raw, state.history);
+
+      const t = document.getElementById('resultTable');
+      t.innerHTML = '<tr><th>שם</th><th>חשמל</th><th>לעומת קודם</th><th>מים</th><th>סה"כ</th></tr>' +
+        lastResults.kids.map((k) =>
+          `<tr><td>${k.name}</td><td>${k.electricity}</td>${pctCell(k)}<td>${k.water}</td><td>${k.total}</td></tr>`
+        ).join('');
+      document.getElementById('message').textContent = window.formatMessage(lastResults);
+      document.getElementById('resultCard').style.display = 'block';
+    });
+
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      await navigator.clipboard.writeText(document.getElementById('message').textContent);
+      const b = document.getElementById('copyBtn');
+      const orig = b.textContent; b.textContent = 'הועתק ✓';
+      setTimeout(() => { b.textContent = orig; }, 1500);
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+      if (!lastResults) return;
+      const currentInputs = document.querySelectorAll('#kids .curInput');
+      const baselineByName = {};
+      state.kids.forEach((k, i) => {
+        baselineByName[k.name] = parseFloat(currentInputs[i].value) || k.lastReading;
+      });
+      const readingDate = new Date().toISOString().slice(0, 10);
+      const resultsToSave = Object.assign({}, lastResults, { label: lastResults.period });
+      try {
+        await window.store.saveCycle(resultsToSave, readingDate, baselineByName);
+      } catch (e) { alert('שמירה נכשלה: ' + (e.message || e)); return; }
+      state = await window.store.loadState();
+      renderKidInputs();
+      renderTrends();
+      renderPeriods();
+      lastResults = null;
+      document.getElementById('resultCard').style.display = 'none';
+      const b = document.getElementById('saveBtn');
+      const orig = b.textContent; b.textContent = 'נשמר ✓';
+      setTimeout(() => { b.textContent = orig; }, 1500);
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `home-bills-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    boot();
+  </script>
+</body>
+</html>
