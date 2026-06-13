@@ -38,4 +38,34 @@ async function signIn(email) {
 }
 async function signOut() { return _sb.auth.signOut(); }
 
-window.store = { initSupabase, loadState, saveCycle, getSession, signIn, signOut, KID_ORDER };
+async function listDocuments() {
+  const { data, error } = await _sb.from('documents').select('*');
+  if (error) throw error;
+  return data || [];
+}
+
+async function uploadDocument(periodId, kind, kid, file) {
+  const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+  const kidSlug = kid ? '-' + ({ 'ירין': 'yarin', 'גל': 'gal', 'ניב': 'niv' }[kid] || kid) : '';
+  const path = `${periodId}/${kind}${kidSlug}.${ext}`;
+  const up = await _sb.storage.from('documents').upload(path, file, { upsert: true });
+  if (up.error) throw up.error;
+  const label = kind === 'water_bill' ? 'חשבון מים' : kind === 'electricity_bill' ? 'חשבון חשמל' : `מונה ${kid || ''}`.trim();
+  const { error } = await _sb.from('documents').insert({ period_id: periodId, kind, kid: kid || null, storage_path: path, label });
+  if (error) throw error;
+}
+
+async function signedUrl(path) {
+  const { data, error } = await _sb.storage.from('documents').createSignedUrl(path, 60);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+async function deleteDocument(doc) {
+  await _sb.storage.from('documents').remove([doc.storage_path]);
+  const { error } = await _sb.from('documents').delete().eq('id', doc.id);
+  if (error) throw error;
+}
+
+window.store = { initSupabase, loadState, saveCycle, getSession, signIn, signOut,
+  listDocuments, uploadDocument, signedUrl, deleteDocument, KID_ORDER };

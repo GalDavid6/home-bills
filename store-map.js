@@ -6,7 +6,7 @@ function rowsToState(periods, readings, baselines, kidOrder) {
     readings.filter((r) => r.period_id === p.id).forEach((r) => {
       kids[r.kid] = { c: Number(r.consumption), e: Number(r.electricity) };
     });
-    return { label: p.label, date: p.reading_date, tariff: Number(p.tariff), waterShare: Number(p.water_share), kids };
+    return { id: p.id, label: p.label, date: p.reading_date, tariff: Number(p.tariff), waterShare: Number(p.water_share), kids };
   });
   const kids = kidOrder.map((name) => {
     const b = baselines.find((x) => x.kid === name);
