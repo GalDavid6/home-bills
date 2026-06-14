@@ -99,6 +99,9 @@
     #chart svg { display:block; width:100%; height:auto; }
     #chart .tline { stroke-dasharray:1000; stroke-dashoffset:1000; animation: draw 1.1s cubic-bezier(.3,.7,.3,1) forwards; }
     .hint { color:var(--muted); font-size:.82rem; margin-top:8px; }
+    #backBtn { width:auto; padding:8px 16px; margin-top:0; }
+    #archiveBtn { background:#F3E7D3; color:var(--terra-dk); box-shadow:none; border:1.5px solid var(--line); }
+    #archiveBtn:hover { background:#EFE0C8; box-shadow:var(--shadow-sm); }
     @keyframes draw { to { stroke-dashoffset:0; } }
     @media (prefers-reduced-motion: reduce) {
       #chart .tline { stroke-dasharray:none!important; stroke-dashoffset:0!important; }
@@ -165,7 +168,7 @@
 
     @keyframes rise { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
     @keyframes pop { from { opacity:0; transform:scale(.6) rotate(-8deg); } to { opacity:1; transform:none; } }
-    @media (prefers-reduced-motion: reduce) { *{animation:none!important} #periods .ly-panel{transition:none} }
+    @media (prefers-reduced-motion: reduce) { *{animation:none!important} .rep .ly-panel{transition:none} }
   </style>
 </head>
 <body>
@@ -178,41 +181,48 @@
   </header>
   <div id="authBar" style="text-align:center; margin-bottom:14px;"></div>
 
-  <div class="card">
-    <label>תקופה</label>
-    <input id="period" placeholder="יוני 2026" />
-    <label>סכום חשבון מים (₪)</label>
-    <input id="waterTotal" type="number" inputmode="decimal" />
-    <label>תעריף לקוט"ש (₪)</label>
-    <input id="tariff" type="number" inputmode="decimal" step="0.01" />
-    <div id="kids"></div>
-    <button id="calcBtn">חשב</button>
-    <div id="validation"></div>
+  <div id="homeView">
+    <div class="card" id="inputCard">
+      <label>תקופה</label>
+      <input id="period" placeholder="יוני 2026" />
+      <label>סכום חשבון מים (₪)</label>
+      <input id="waterTotal" type="number" inputmode="decimal" />
+      <label>תעריף לקוט"ש (₪)</label>
+      <input id="tariff" type="number" inputmode="decimal" step="0.01" />
+      <div id="kids"></div>
+      <button id="calcBtn">חשב</button>
+      <div id="validation"></div>
+    </div>
+
+    <div class="card" id="resultCard" style="display:none">
+      <table id="resultTable"></table>
+      <pre id="message"></pre>
+      <button id="copyBtn">העתק הודעה ל-WhatsApp</button>
+      <button id="saveBtn" class="secondary">שמור מחזור (קריאות → קודמות)</button>
+    </div>
+
+    <div id="latest"></div>
+
+    <div class="card" id="trendCard" style="display:none">
+      <h2>📈 מגמת צריכה יומית (קוט"ש ליום)</h2>
+      <div id="legend" class="legend"></div>
+      <div id="chart"></div>
+      <div class="hint">מנורמל לפי ימים בין קריאות — משווה עוצמת צריכה אמיתית, ללא תלות באורך התקופה.</div>
+    </div>
+
+    <button id="archiveBtn" style="display:none"></button>
+
+    <div class="card" id="backupCard">
+      <h2>💾 גיבוי נתונים</h2>
+      <button id="exportBtn" class="secondary">ייצא גיבוי (JSON)</button>
+      <div class="hint">מוריד עותק JSON של כל הנתונים מהענן (גיבוי נוסף מעבר ל-Supabase).</div>
+    </div>
   </div>
 
-  <div class="card" id="resultCard" style="display:none">
-    <table id="resultTable"></table>
-    <pre id="message"></pre>
-    <button id="copyBtn">העתק הודעה ל-WhatsApp</button>
-    <button id="saveBtn" class="secondary">שמור מחזור (קריאות → קודמות)</button>
-  </div>
-
-  <div class="card" id="periodsCard" style="display:none">
-    <h2>🧾 תקופות קודמות</h2>
-    <div id="periods"></div>
-  </div>
-
-  <div class="card" id="trendCard" style="display:none">
-    <h2>📈 מגמת צריכה יומית (קוט"ש ליום)</h2>
-    <div id="legend" class="legend"></div>
-    <div id="chart"></div>
-    <div class="hint">מנורמל לפי ימים בין קריאות — משווה עוצמת צריכה אמיתית, ללא תלות באורך התקופה.</div>
-  </div>
-
-  <div class="card" id="backupCard">
-    <h2>💾 גיבוי נתונים</h2>
-    <button id="exportBtn" class="secondary">ייצא גיבוי (JSON)</button>
-    <div class="hint">מוריד עותק JSON של כל הנתונים מהענן (גיבוי נוסף מעבר ל-Supabase).</div>
+  <div id="archiveView" style="display:none">
+    <button id="backBtn" class="secondary">‹ חזרה</button>
+    <h2 style="margin:14px 2px 12px">🧾 תקופות קודמות</h2>
+    <div id="archive"></div>
   </div>
   </div>
 
@@ -229,6 +239,14 @@
     let state = { kids: DEFAULT_KIDS.map((name) => ({ name, lastReading: 0 })), history: [] };
     let session = null;
 
+    function applyView() {
+      const archive = location.hash === '#archive';
+      document.getElementById('homeView').style.display = archive ? 'none' : 'block';
+      document.getElementById('archiveView').style.display = archive ? 'block' : 'none';
+      window.scrollTo(0, 0);
+    }
+    window.addEventListener('hashchange', applyView);
+
     async function boot() {
       window.store.initSupabase();
       session = await window.store.getSession();
@@ -238,6 +256,12 @@
       renderKidInputs();
       renderTrends();
       renderPeriods();
+      document.getElementById('archiveBtn').addEventListener('click', () => { location.hash = 'archive'; });
+      document.getElementById('backBtn').addEventListener('click', () => {
+        history.replaceState(null, '', location.pathname + location.search);
+        applyView();
+      });
+      applyView();
     }
 
     function renderKidInputs() {
@@ -357,7 +381,7 @@
 
     function applyAuthMode() {
       const editor = !!session;
-      document.querySelector('.card').style.display = editor ? 'block' : 'none';
+      document.getElementById('inputCard').style.display = editor ? 'block' : 'none';
       document.getElementById('backupCard').style.display = editor ? 'block' : 'none';
       document.getElementById('authBar').innerHTML = editor
         ? `<button id="logoutBtn" class="secondary" style="width:auto;padding:6px 14px">התנתק (עורך)</button>`
@@ -394,11 +418,11 @@
       return state.kids.map((k) => k.name).filter((n) => h.kids[n]);
     }
 
-    function kidLine(h, name, ly) {
+    function kidLine(h, name, ly, prevE) {
       const k = h.kids[name];
       const water = h.waterShare;
       const total = k.e + water;
-      const pct = window.pctChange(k.electricity != null ? k.electricity : k.e, h._prevE && h._prevE[name] != null ? h._prevE[name] : null);
+      const pct = window.pctChange(k.electricity != null ? k.electricity : k.e, prevE && prevE[name] != null ? prevE[name] : null);
       let tag = '';
       if (pct !== null) {
         if (pct < 0) tag = `<span class="tag green">${pct}% ✓</span>`;
@@ -421,72 +445,81 @@
         ly_html + `</div>`;
     }
 
-    function renderPeriods() {
-      const host = document.getElementById('periods');
-      const card = document.getElementById('periodsCard');
-      if (!state.history.length) { card.style.display = 'none'; return; }
-      card.style.display = 'block';
-      const editor = !!session;
+    // Build one period's report-card HTML. `i` is the index in state.history.
+    function cardHtml(h, i, isNewest) {
       const hist = state.history;
-      host.innerHTML = hist.map((h, i) => {
-        const prev = i > 0 ? hist[i - 1] : null;
-        const names = periodKids(h);
-        const total = names.reduce((s, n) => s + h.kids[n].e, 0) + h.waterShare * names.length;
-        const gap = prev ? window.daysBetween(prev.date, h.date) : null;
-        const ly = window.closestToYearAgo(hist, h.date);
-        // prev-electricity lookup for per-kid pct
-        h._prevE = {};
-        if (prev) names.forEach((n) => { h._prevE[n] = prev.kids[n] ? prev.kids[n].e : null; });
-        const isNewest = i === hist.length - 1;
+      const prev = i > 0 ? hist[i - 1] : null;
+      const names = periodKids(h);
+      const total = names.reduce((s, n) => s + h.kids[n].e, 0) + h.waterShare * names.length;
+      const gap = prev ? window.daysBetween(prev.date, h.date) : null;
+      const ly = window.closestToYearAgo(hist, h.date);
+      const prevE = {};
+      if (prev) names.forEach((n) => { prevE[n] = prev.kids[n] ? prev.kids[n].e : null; });
 
-        const chips =
-          (h.date ? `<span class="chip">📅 המונה נדגם ב<b>${fmtHebDate(h.date)}</b></span>` : '') +
-          (gap !== null ? `<span class="chip gap">🗓️ <b>${gap} ימים</b> מאז הדגימה הקודמת (${prev.label})</span>` : '');
+      const chips =
+        (h.date ? `<span class="chip">📅 המונה נדגם ב<b>${fmtHebDate(h.date)}</b></span>` : '') +
+        (gap !== null ? `<span class="chip gap">🗓️ <b>${gap} ימים</b> מאז הדגימה הקודמת (${prev.label})</span>` : '');
 
-        const totalHtml = isNewest
-          ? `<span data-countup="${total}">0</span>` : total.toLocaleString('he-IL');
-        const hero =
-          `<div class="rep-hero"><div class="cap">סה"כ להעברה</div>` +
-          `<div class="total">${totalHtml}<span class="cur"> ₪</span></div>` +
-          `<div class="sub">💧 מים ${h.waterShare} ₪ לכל אחד · ⚡ חשמל לפי צריכה · תעריף ${h.tariff} ₪/קוט"ש</div></div>`;
+      const totalHtml = isNewest ? `<span data-countup="${total}">0</span>` : total.toLocaleString('he-IL');
+      const hero =
+        `<div class="rep-hero"><div class="cap">סה"כ להעברה</div>` +
+        `<div class="total">${totalHtml}<span class="cur"> ₪</span></div>` +
+        `<div class="sub">💧 מים ${h.waterShare} ₪ לכל אחד · ⚡ חשמל לפי צריכה · תעריף ${h.tariff} ₪/קוט"ש</div></div>`;
 
-        const kidsHtml = names.map((n) => kidLine(h, n, ly)).join('');
+      const kidsHtml = names.map((n) => kidLine(h, n, ly, prevE)).join('');
 
-        // WhatsApp text kept available for copy
-        const kidsForMsg = names.map((n) => ({
-          name: n, consumption: h.kids[n].c, electricity: h.kids[n].e,
-          water: h.waterShare, total: h.kids[n].e + h.waterShare,
-        }));
-        const msg = window.formatMessage({
-          period: h.label, waterTotal: h.waterShare * 4, tariff: h.tariff, waterShare: h.waterShare, kids: kidsForMsg,
-        });
+      const kidsForMsg = names.map((n) => ({
+        name: n, consumption: h.kids[n].c, electricity: h.kids[n].e,
+        water: h.waterShare, total: h.kids[n].e + h.waterShare,
+      }));
+      const msg = window.formatMessage({
+        period: h.label, waterTotal: h.waterShare * 4, tariff: h.tariff, waterShare: h.waterShare, kids: kidsForMsg,
+      });
 
-        let docs = '';
-        if (editor) {
-          const mine = (state.documents || []).filter((d) => d.period_id === h.id);
-          docs = `<div class="docs">${mine.map(docLine).join('')}${uploadForm(h.id)}</div>`;
-        }
+      let docs = '';
+      if (session) {
+        const mine = (state.documents || []).filter((d) => d.period_id === h.id);
+        docs = `<div class="docs">${mine.map(docLine).join('')}${uploadForm(h.id)}</div>`;
+      }
 
-        return `<div class="rep card">` +
-          `<div class="rep-head"><span class="rep-label">${h.label}</span><div class="chips">${chips}</div></div>` +
-          hero + kidsHtml +
-          `<pre class="wa-text" hidden>${msg}</pre>` +
-          `<button class="secondary wa-copy">📋 העתק הודעה ל-WhatsApp</button>` +
-          docs + `</div>`;
-      }).reverse().join('');
+      return `<div class="rep card">` +
+        `<div class="rep-head"><span class="rep-label">${h.label}</span><div class="chips">${chips}</div></div>` +
+        hero + kidsHtml +
+        `<pre class="wa-text" hidden>${msg}</pre>` +
+        `<button class="secondary wa-copy">📋 העתק הודעה ל-WhatsApp</button>` +
+        docs + `</div>`;
+    }
+
+    function renderPeriods() {
+      const latestHost = document.getElementById('latest');
+      const archiveHost = document.getElementById('archive');
+      const archiveBtn = document.getElementById('archiveBtn');
+      latestHost.innerHTML = ''; archiveHost.innerHTML = '';
+      const hist = state.history;
+      if (!hist.length) { archiveBtn.style.display = 'none'; return; }
+
+      const newest = hist.length - 1;
+      latestHost.innerHTML = cardHtml(hist[newest], newest, true);
+
+      const older = hist.slice(0, newest);            // ascending, oldest→older
+      archiveHost.innerHTML = older.map((h, i) => cardHtml(h, i, false)).reverse().join('');
+
+      const n = older.length;
+      archiveBtn.style.display = n ? 'block' : 'none';
+      if (n) archiveBtn.textContent = `תקופות קודמות (${n}) ›`;
 
       wireReportActions();
-      if (editor) wireDocActions();
-      runCountUps(host);
+      if (session) wireDocActions();
+      runCountUps(latestHost);
     }
 
     function wireReportActions() {
-      document.querySelectorAll('#periods .ly-toggle').forEach((btn) => btn.addEventListener('click', () => {
+      document.querySelectorAll('.rep .ly-toggle').forEach((btn) => btn.addEventListener('click', () => {
         const open = btn.getAttribute('aria-expanded') === 'true';
         btn.setAttribute('aria-expanded', String(!open));
         btn.nextElementSibling.classList.toggle('open', !open);
       }));
-      document.querySelectorAll('#periods .wa-copy').forEach((btn) => btn.addEventListener('click', async () => {
+      document.querySelectorAll('.rep .wa-copy').forEach((btn) => btn.addEventListener('click', async () => {
         const txt = btn.parentElement.querySelector('.wa-text').textContent;
         await navigator.clipboard.writeText(txt);
         const orig = btn.textContent; btn.textContent = 'הועתק ✓';
@@ -495,17 +528,17 @@
     }
 
     function wireDocActions() {
-      document.querySelectorAll('#periods .u-kind').forEach((sel) => {
+      document.querySelectorAll('.rep .u-kind').forEach((sel) => {
         const wrap = sel.closest('.upload').querySelector('.u-kid-wrap');
         const toggle = () => { wrap.style.display = sel.value === 'meter_photo' ? 'inline-flex' : 'none'; };
         sel.addEventListener('change', toggle);
         toggle();
       });
-      document.querySelectorAll('#periods .dl').forEach((a) => a.addEventListener('click', async () => {
+      document.querySelectorAll('.rep .dl').forEach((a) => a.addEventListener('click', async () => {
         try { window.open(await window.store.signedUrl(a.dataset.path), '_blank'); }
         catch (e) { alert('הורדה נכשלה: ' + (e.message || e)); }
       }));
-      document.querySelectorAll('#periods .del').forEach((b) => b.addEventListener('click', async () => {
+      document.querySelectorAll('.rep .del').forEach((b) => b.addEventListener('click', async () => {
         if (!confirm('למחוק את המסמך?')) return;
         try {
           await window.store.deleteDocument({ id: b.dataset.id, storage_path: b.dataset.path });
@@ -513,7 +546,7 @@
           renderPeriods();
         } catch (e) { alert('מחיקה נכשלה: ' + (e.message || e)); }
       }));
-      document.querySelectorAll('#periods .u-go').forEach((btn) => btn.addEventListener('click', async () => {
+      document.querySelectorAll('.rep .u-go').forEach((btn) => btn.addEventListener('click', async () => {
         const box = btn.closest('.upload');
         const pid = box.dataset.pid;
         const kind = box.querySelector('.u-kind').value;
