@@ -101,9 +101,18 @@ function waterInsight(history) {
   return { current, previous, lastYear };
 }
 
+// Family water-bill series for the trend chart: one entry per cycle that has a
+// numeric waterTotal, in history order (already ascending by date).
+function waterSeries(history) {
+  if (!history) return [];
+  return history
+    .filter((h) => typeof h.waterTotal === 'number' && !isNaN(h.waterTotal))
+    .map((h) => ({ label: h.label, date: h.date, full: h.waterTotal }));
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { compareCycle, consumptionSeries, dailySeries, daysBetween, pctChange,
-    daysSinceLast, closestToYearAgo, waterInsight, ANOMALY_THRESHOLD };
+    daysSinceLast, closestToYearAgo, waterInsight, waterSeries, ANOMALY_THRESHOLD };
 }
 if (typeof window !== 'undefined') {
   window.compareCycle = compareCycle;
@@ -114,4 +123,5 @@ if (typeof window !== 'undefined') {
   window.closestToYearAgo = closestToYearAgo;
   window.daysBetween = daysBetween;
   window.waterInsight = waterInsight;
+  window.waterSeries = waterSeries;
 }

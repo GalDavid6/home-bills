@@ -125,6 +125,15 @@
     #waterInsight .delta.up { color:var(--up); } #waterInsight .delta.down { color:var(--down); }
     #waterInsight .delta.zero { color:var(--muted); }
     #waterInsight .hint { color:var(--muted); font-size:.76rem; margin-top:10px; }
+    /* water trend chart */
+    #waterTrend .wi-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    #waterTrend .wi-head h2 { font-family:'Suez One',serif; font-weight:400; color:#2F6087; font-size:1.12rem; margin:0; }
+    #waterTrend .wi-head .sub { margin-right:auto; font-size:.78rem; color:var(--muted); }
+    #waterTrend svg { display:block; width:100%; height:auto; }
+    #waterTrend .hint { color:var(--muted); font-size:.76rem; margin-top:10px; }
+    #waterTrend .wbar { transform-box:fill-box; transform-origin:bottom; animation:wgrow .8s cubic-bezier(.3,.7,.3,1) both; }
+    @keyframes wgrow { from { transform:scaleY(0); } to { transform:scaleY(1); } }
+    @media (prefers-reduced-motion: reduce) { #waterTrend .wbar { animation:none; } }
     @keyframes draw { to { stroke-dashoffset:0; } }
     @media (prefers-reduced-motion: reduce) {
       #chart .tline { stroke-dasharray:none!important; stroke-dashoffset:0!important; }
@@ -226,6 +235,7 @@
 
     <div id="latest"></div>
     <div class="card" id="waterInsight" style="display:none"></div>
+    <div class="card" id="waterTrend" style="display:none"></div>
 
     <div class="card" id="trendCard" style="display:none">
       <h2>📈 מגמת צריכה יומית (קוט"ש ליום)</h2>
@@ -281,6 +291,7 @@
       renderTrends();
       renderPeriods();
       renderWaterInsight();
+      renderWaterTrend();
       document.getElementById('archiveBtn').addEventListener('click', () => { location.hash = 'archive'; });
       document.getElementById('backBtn').addEventListener('click', () => {
         history.replaceState(null, '', location.pathname + location.search);
@@ -515,6 +526,41 @@
         docs + `</div>`;
     }
 
+    function renderWaterTrend() {
+      const card = document.getElementById('waterTrend');
+      const series = window.waterSeries(state.history);
+      if (series.length < 2) { card.style.display = 'none'; return; }
+      const W = 520, H = 250, mL = 44, mR = 14, mT = 14, mB = 56;
+      const px0 = mL, px1 = W - mR, py0 = mT, py1 = H - mB;
+      const vals = series.map((d) => d.full);
+      const min = Math.min(...vals), max = Math.max(...vals), range = Math.max(max - min, 1);
+      const lo = Math.max(0, Math.floor((min - range * 0.4 - 20) / 50) * 50);
+      const hi = Math.ceil((max + range * 0.1 + 20) / 50) * 50;
+      const Y = (v) => py1 - ((v - lo) / (hi - lo)) * (py1 - py0);
+      const n = series.length, gap = 8, bw = ((px1 - px0) / n) - gap;
+      let svg = `<svg viewBox="0 0 ${W} ${H}" font-family="inherit">`;
+      [lo, (lo + hi) / 2, hi].forEach((t) => {
+        const y = Y(t);
+        svg += `<line x1="${px0}" y1="${y}" x2="${px1}" y2="${y}" stroke="#EADFC8"/>` +
+          `<text x="${px0 - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#9C8B77">${Math.round(t).toLocaleString('he-IL')}</text>`;
+      });
+      // (no rotated ₪ axis caption — labels are ₪ values and the subtitle states the unit)
+      series.forEach((d, i) => {
+        const x = px1 - (i + 1) * (bw + gap) + gap / 2; // RTL: newest on the right
+        const y = Y(d.full), h = Math.max(py1 - y, 0), now = i === n - 1;
+        svg += `<rect class="wbar" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${now ? '#2F6087' : '#7FB0D0'}"><title>${d.label}: ${d.full.toLocaleString('he-IL')} ₪</title></rect>`;
+        if (now) svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#2F6087">${d.full.toLocaleString('he-IL')}</text>`;
+        const ly = py1 + 13;
+        svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${ly}" text-anchor="middle" font-size="8" fill="${now ? '#2F6087' : '#9C8B77'}" ${now ? 'font-weight="700"' : ''} transform="rotate(-32 ${(x + bw / 2).toFixed(1)} ${ly})">${d.label}</text>`;
+      });
+      svg += '</svg>';
+      card.innerHTML =
+        `<div class="wi-head"><h2>💧 מגמת חשבון המים</h2><span class="sub">₪ לאורך זמן</span></div>` +
+        svg +
+        `<div class="hint">סכום החשבון המלא של הבית בכל תקופה.</div>`;
+      card.style.display = 'block';
+    }
+
     function renderWaterInsight() {
       const card = document.getElementById('waterInsight');
       const w = window.waterInsight(state.history);
@@ -689,6 +735,7 @@
       renderTrends();
       renderPeriods();
       renderWaterInsight();
+      renderWaterTrend();
       lastResults = null;
       document.getElementById('resultCard').style.display = 'none';
       const b = document.getElementById('saveBtn');
