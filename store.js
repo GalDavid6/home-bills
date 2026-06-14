@@ -8,12 +8,15 @@ function initSupabase() {
 }
 
 async function loadState() {
-  const [{ data: periods }, { data: readings }, { data: baselines }] = await Promise.all([
+  const [{ data: periods }, { data: readings }, { data: baselines }, { data: otherBills }] = await Promise.all([
     _sb.from('periods').select('*'),
     _sb.from('electricity_readings').select('*'),
     _sb.from('baselines').select('*'),
+    _sb.from('other_bills').select('*'),
   ]);
-  return window.rowsToState(periods || [], readings || [], baselines || [], KID_ORDER);
+  const st = window.rowsToState(periods || [], readings || [], baselines || [], KID_ORDER);
+  st.otherBills = (otherBills || []).slice().sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+  return st;
 }
 
 // Inserts the period + its readings and upserts baselines. Requires auth (RLS).
@@ -55,6 +58,28 @@ async function uploadDocument(periodId, kind, kid, file) {
   if (error) throw error;
 }
 
+// Upsert one provider's monthly amount and (optionally) archive its PDF.
+// provider: 'bezeq'|'yes'; month: 'YYYY-MM'; amount: Number|null; file: File|null.
+async function saveProviderBill(provider, month, amount, file) {
+  const row = { month, updated_at: new Date().toISOString() };
+  if (amount != null && !isNaN(amount)) row[provider] = Number(amount);
+  const { error: e1 } = await _sb.from('other_bills').upsert(row, { onConflict: 'month' });
+  if (e1) throw e1;
+  if (file) {
+    const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
+    const path = `other/${provider}/${month}.${ext}`;
+    const up = await _sb.storage.from('documents').upload(path, file, { upsert: true });
+    if (up.error) throw up.error;
+    // Remove any prior row for this exact path, then insert (keeps one doc per provider-month).
+    await _sb.from('documents').delete().eq('storage_path', path);
+    const { error: e2 } = await _sb.from('documents').insert(
+      { period_id: null, kind: provider, kid: null, storage_path: path, label: month });
+    if (e2) throw e2;
+  }
+}
+
+async function deleteProviderDoc(doc) { return deleteDocument(doc); }
+
 async function signedUrl(path) {
   const { data, error } = await _sb.storage.from('documents').createSignedUrl(path, 60);
   if (error) throw error;
@@ -68,4 +93,5 @@ async function deleteDocument(doc) {
 }
 
 window.store = { initSupabase, loadState, saveCycle, getSession, signIn, signOut,
-  listDocuments, uploadDocument, signedUrl, deleteDocument, KID_ORDER };
+  listDocuments, uploadDocument, signedUrl, deleteDocument,
+  saveProviderBill, deleteProviderDoc, KID_ORDER };

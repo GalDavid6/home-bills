@@ -134,6 +134,28 @@
     #waterTrend .wbar { transform-box:fill-box; transform-origin:bottom; animation:wgrow .8s cubic-bezier(.3,.7,.3,1) both; }
     @keyframes wgrow { from { transform:scaleY(0); } to { transform:scaleY(1); } }
     @media (prefers-reduced-motion: reduce) { #waterTrend .wbar { animation:none; } }
+    /* Provider subscriptions card reuses the water-card treatment (provider hue lives on the bars). */
+    #otherBills > .wi-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    #otherBills > .wi-head h2 { font-family:'Suez One',serif; font-weight:400; color:#2F6087; font-size:1.12rem; margin:0; }
+    #otherBills .prov-block .wi-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    #otherBills .prov-block .wi-head h2 { color:#2F6087; margin:0; font-size:1.02rem; }
+    #otherBills .wi-head .sub { margin-right:auto; font-size:.78rem; color:var(--muted); }
+    #otherBills table { width:100%; border-collapse:collapse; margin-top:6px; }
+    #otherBills thead th { font-family:'Rubik',sans-serif; font-weight:600; font-size:.74rem; color:var(--muted); padding:6px 8px; text-align:left; }
+    #otherBills thead th:first-child { text-align:right; }
+    #otherBills tbody td { padding:11px 8px; font-size:.92rem; border-bottom:1px solid var(--line); text-align:left; }
+    #otherBills tbody td:first-child { text-align:right; }
+    #otherBills tbody tr:last-child td { border-bottom:none; }
+    #otherBills .when { font-weight:700; color:var(--text); }
+    #otherBills .when small { display:block; color:var(--muted); font-size:.72rem; font-weight:400; margin-top:1px; }
+    #otherBills .full { font-family:'Suez One',serif; color:#2F6087; }
+    #otherBills .now td { background:#EAF2F8; }
+    #otherBills .now td:first-child { border-radius:0 10px 10px 0; }
+    #otherBills .now td:last-child { border-radius:10px 0 0 10px; }
+    #otherBills .delta { font-family:'Rubik',sans-serif; font-weight:700; font-size:.9rem; white-space:nowrap; }
+    #otherBills .delta.up { color:var(--up); } #otherBills .delta.down { color:var(--down); }
+    #otherBills .delta.zero { color:var(--muted); }
+    #otherBills svg { display:block; width:100%; height:auto; margin-top:6px; }
     @keyframes draw { to { stroke-dashoffset:0; } }
     @media (prefers-reduced-motion: reduce) {
       #chart .tline { stroke-dasharray:none!important; stroke-dashoffset:0!important; }
@@ -150,6 +172,11 @@
     .docs .doc a { color:var(--terra-dk); cursor:pointer; font-weight:600; text-decoration:none;
                    border-bottom:1.5px dotted var(--amber); }
     .docs .doc .del { color:var(--up); cursor:pointer; border:none; background:none; font-size:.85rem;
+                      width:auto; padding:0; margin:0; box-shadow:none; }
+    #pbDocs .doc { display:flex; align-items:center; gap:8px; margin:5px 0; font-size:.92rem; }
+    #pbDocs .pb-dl { color:var(--terra-dk); cursor:pointer; font-weight:600; text-decoration:none;
+                     border-bottom:1.5px dotted var(--amber); }
+    #pbDocs .pb-del { color:var(--up); cursor:pointer; border:none; background:none; font-size:.85rem;
                       width:auto; padding:0; margin:0; box-shadow:none; }
     .docs .upload { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; align-items:center;
                     background:#FFF8EC; border:1px dashed var(--line); border-radius:12px; padding:8px 10px; }
@@ -198,6 +225,8 @@
     .ly-panel .inner .ydate { color:var(--muted); }
     .rep .wa-copy { margin-top:12px; }
 
+    #otherBills .prov-block { margin-top: 18px; }
+    #otherBills .prov-block:first-of-type { margin-top: 6px; }
     @keyframes rise { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
     @keyframes pop { from { opacity:0; transform:scale(.6) rotate(-8deg); } to { opacity:1; transform:none; } }
     @media (prefers-reduced-motion: reduce) { *{animation:none!important} .rep .ly-panel{transition:none} }
@@ -236,6 +265,7 @@
     <div id="latest"></div>
     <div class="card" id="waterInsight" style="display:none"></div>
     <div class="card" id="waterTrend" style="display:none"></div>
+    <div class="card" id="otherBills" style="display:none"></div>
 
     <div class="card" id="trendCard" style="display:none">
       <h2>📈 מגמת צריכה יומית (קוט"ש ליום)</h2>
@@ -250,6 +280,21 @@
       <h2>💾 גיבוי נתונים</h2>
       <button id="exportBtn" class="secondary">ייצא גיבוי (JSON)</button>
       <div class="hint">מוריד עותק JSON של כל הנתונים מהענן (גיבוי נוסף מעבר ל-Supabase).</div>
+    </div>
+
+    <div class="card" id="providerEntry" style="display:none">
+      <h2>📡 חשבונות מנויים (בזק / yes)</h2>
+      <label>ספק</label>
+      <select id="pbProvider"><option value="bezeq">בזק</option><option value="yes">yes</option></select>
+      <label>חודש</label>
+      <input id="pbMonth" type="month" />
+      <label>קובץ חשבונית (PDF)</label>
+      <input id="pbFile" type="file" accept="application/pdf" />
+      <div id="pbParseNote" class="hint"></div>
+      <label>סכום (₪)</label>
+      <input id="pbAmount" type="number" inputmode="decimal" step="0.01" />
+      <button id="pbSave">שמור</button>
+      <div id="pbDocs"></div>
     </div>
   </div>
 
@@ -268,6 +313,14 @@
   <script src="config.js"></script>
   <script src="store-map.js"></script>
   <script src="store.js"></script>
+  <script src="provider-bills.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script>
+    // pdf.js (UMD) exposes window.pdfjsLib; point it at the matching worker.
+    if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  </script>
   <script>
     const DEFAULT_KIDS = window.store.KID_ORDER;
     let state = { kids: DEFAULT_KIDS.map((name) => ({ name, lastReading: 0 })), history: [] };
@@ -292,6 +345,8 @@
       renderPeriods();
       renderWaterInsight();
       renderWaterTrend();
+      renderOtherBills();
+      if (session) { renderProviderEntry(); wireProviderEntry(); }
       document.getElementById('archiveBtn').addEventListener('click', () => { location.hash = 'archive'; });
       document.getElementById('backBtn').addEventListener('click', () => {
         history.replaceState(null, '', location.pathname + location.search);
@@ -419,6 +474,7 @@
       const editor = !!session;
       document.getElementById('inputCard').style.display = editor ? 'block' : 'none';
       document.getElementById('backupCard').style.display = editor ? 'block' : 'none';
+      document.getElementById('providerEntry').style.display = editor ? 'block' : 'none';
       document.getElementById('authBar').innerHTML = editor
         ? `<button id="logoutBtn" class="secondary" style="width:auto;padding:6px 14px">התנתק (עורך)</button>`
         : `<button id="loginBtn" class="secondary" style="width:auto;padding:6px 14px">התחבר (עורך)</button>`;
@@ -589,6 +645,178 @@
       card.style.display = 'block';
     }
 
+    const PROVIDERS = [
+      { key: 'bezeq', name: 'בזק', emoji: '📞', bar: '#4A6FA5', barNow: '#2C4A78' },
+      { key: 'yes',   name: 'yes', emoji: '📺', bar: '#C76B98', barNow: '#9B3F6E' },
+    ];
+
+    function provInsightHtml(p) {
+      const ins = window.otherBillInsight(state.otherBills, p.key);
+      if (!ins) return '';
+      const fmt = (n) => Number(n).toLocaleString('he-IL');
+      const moLabel = (m) => { const [y, mm] = m.split('-'); return `${mm}/${y}`; };
+      const delta = (row) => {
+        if (!row || row.pct === null || row.pct === undefined) return '<td class="delta zero">—</td>';
+        const cls = row.pct > 0 ? 'up' : row.pct < 0 ? 'down' : 'zero';
+        const arrow = row.pct > 0 ? '▲ +' : row.pct < 0 ? '▼ ' : '';
+        return `<td class="delta ${cls}">${arrow}${row.pct}%</td>`;
+      };
+      const dataRow = (when, row, isNow) =>
+        `<tr class="${isNow ? 'now' : ''}"><td class="when">${when}<small>${moLabel(row.month)}</small></td>` +
+        `<td class="full">${fmt(row.amount)} ₪</td>` + (isNow ? '<td class="delta zero">—</td>' : delta(row)) + `</tr>`;
+      let rows = dataRow('עכשיו', ins.current, true);
+      if (ins.previous) rows += dataRow('חודש קודם', ins.previous, false);
+      if (ins.lastYear) rows += dataRow('שנה שעברה', ins.lastYear, false);
+      return `<table><thead><tr><th>תקופה</th><th>חשבון</th><th>השינוי</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function provTrendSvg(p) {
+      const series = window.otherBillSeries(state.otherBills, p.key);
+      if (series.length < 2) return '';
+      const W = 520, H = 220, mL = 44, mR = 14, mT = 14, mB = 50;
+      const px0 = mL, px1 = W - mR, py0 = mT, py1 = H - mB;
+      const vals = series.map((d) => d.amount);
+      const min = Math.min(...vals), max = Math.max(...vals), range = Math.max(max - min, 1);
+      const lo = Math.max(0, Math.floor((min - range * 0.4 - 10) / 20) * 20);
+      const hi = Math.ceil((max + range * 0.1 + 10) / 20) * 20;
+      const Y = (v) => py1 - ((v - lo) / (hi - lo)) * (py1 - py0);
+      const n = series.length, gap = 8, bw = ((px1 - px0) / n) - gap;
+      const moLabel = (m) => { const [y, mm] = m.split('-'); return `${mm}/${y.slice(2)}`; };
+      let svg = `<svg viewBox="0 0 ${W} ${H}" font-family="inherit">`;
+      [lo, (lo + hi) / 2, hi].forEach((t) => {
+        const y = Y(t);
+        svg += `<line x1="${px0}" y1="${y}" x2="${px1}" y2="${y}" stroke="#EADFC8"/>` +
+          `<text x="${px0 - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#9C8B77">${Math.round(t).toLocaleString('he-IL')}</text>`;
+      });
+      series.forEach((d, i) => {
+        const x = px1 - (i + 1) * (bw + gap) + gap / 2; // RTL: newest on the right
+        const y = Y(d.amount), h = Math.max(py1 - y, 0), now = i === n - 1;
+        svg += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${now ? p.barNow : p.bar}"><title>${moLabel(d.month)}: ${d.amount.toLocaleString('he-IL')} ₪</title></rect>`;
+        if (now) svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${p.barNow}">${d.amount.toLocaleString('he-IL')}</text>`;
+        const ly = py1 + 13;
+        svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${ly}" text-anchor="middle" font-size="8" fill="${now ? p.barNow : '#9C8B77'}" ${now ? 'font-weight="700"' : ''} transform="rotate(-32 ${(x + bw / 2).toFixed(1)} ${ly})">${moLabel(d.month)}</text>`;
+      });
+      return svg + '</svg>';
+    }
+
+    function renderOtherBills() {
+      const card = document.getElementById('otherBills');
+      const blocks = PROVIDERS.map((p) => {
+        const insight = provInsightHtml(p);
+        if (!insight) return ''; // provider has no data -> skip block
+        const trend = provTrendSvg(p);
+        return `<div class="prov-block"><div class="wi-head"><h2>${p.emoji} ${p.name}</h2>` +
+          `<span class="sub">מנוי חודשי קבוע</span></div>${insight}${trend}</div>`;
+      }).filter(Boolean);
+      if (!blocks.length) { card.style.display = 'none'; return; }
+      card.innerHTML = `<div class="wi-head"><h2>📡 מנויים קבועים</h2></div>${blocks.join('')}`;
+      card.style.display = 'block';
+    }
+
+    async function extractPdfText(file) {
+      const data = new Uint8Array(await file.arrayBuffer());
+      const pdf = await window.pdfjsLib.getDocument({ data }).promise;
+      let text = '';
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const tc = await (await pdf.getPage(p)).getTextContent();
+        text += tc.items.map((it) => it.str).join(' ') + '\n';
+      }
+      return text;
+    }
+
+    function renderProviderEntry() {
+      if (!document.getElementById('pbMonth').value)
+        document.getElementById('pbMonth').value = new Date().toISOString().slice(0, 7);
+      const provider = document.getElementById('pbProvider').value;
+      const docs = (state.documents || []).filter((d) => d.kind === provider)
+        .sort((a, b) => (a.label < b.label ? 1 : -1));
+      const host = document.getElementById('pbDocs');
+      const rows = docs.map((d) =>
+        `<div class="doc">📎 <a class="pb-dl" data-path="${d.storage_path}">${d.label}</a>` +
+        `<button class="pb-del" data-id="${d.id}" data-path="${d.storage_path}">מחק</button></div>`).join('');
+      host.innerHTML = (docs.length
+        ? `<div class="pb-doclist">${rows}</div><button class="secondary" id="pbZip">⬇️ הורד הכל (${provider})</button>`
+        : '<div class="hint">אין עדיין מסמכים לספק זה.</div>');
+    }
+
+    async function pbDownloadAll(provider) {
+      const docs = (state.documents || []).filter((d) => d.kind === provider);
+      if (!docs.length) return;
+      const zip = new window.JSZip();
+      for (const d of docs) {
+        const url = await window.store.signedUrl(d.storage_path);
+        const blob = await (await fetch(url)).blob();
+        zip.file(`${d.label}.pdf`, blob);
+      }
+      const out = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(out);
+      a.download = window.providerZipName(docs, provider);
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function wireProviderEntry() {
+      const provSel = document.getElementById('pbProvider');
+      const fileInp = document.getElementById('pbFile');
+      const note = document.getElementById('pbParseNote');
+      provSel.addEventListener('change', renderProviderEntry);
+
+      fileInp.addEventListener('change', async () => {
+        const f = fileInp.files[0];
+        note.textContent = '';
+        if (!f) return;
+        try {
+          const text = await extractPdfText(f);
+          const parsed = window.parseInvoiceTotal(text, provSel.value);
+          if (parsed && parsed.amount != null) {
+            document.getElementById('pbAmount').value = parsed.amount;
+            if (parsed.month) document.getElementById('pbMonth').value = parsed.month;
+            note.textContent = `נקרא מהחשבונית: ${parsed.amount} ₪${parsed.month ? ' · ' + parsed.month : ''}. בדוק ואשר.`;
+          } else {
+            note.textContent = 'לא הצלחתי לקרוא את הסכום — הזן ידנית.';
+          }
+        } catch (e) { note.textContent = 'קריאת ה-PDF נכשלה — הזן סכום ידנית.'; }
+      });
+
+      document.getElementById('pbSave').addEventListener('click', async () => {
+        const provider = provSel.value;
+        const month = document.getElementById('pbMonth').value;       // 'YYYY-MM'
+        const amount = parseFloat(document.getElementById('pbAmount').value);
+        const file = fileInp.files[0] || null;
+        if (!month) { alert('בחר חודש'); return; }
+        if (isNaN(amount) && !file) { alert('הזן סכום או בחר קובץ'); return; }
+        const btn = document.getElementById('pbSave');
+        btn.disabled = true; btn.textContent = 'שומר...';
+        try {
+          await window.store.saveProviderBill(provider, month, isNaN(amount) ? null : amount, file);
+          state = await window.store.loadState();
+          state.documents = await window.store.listDocuments();
+          renderOtherBills();
+          renderProviderEntry();
+          fileInp.value = ''; document.getElementById('pbAmount').value = ''; note.textContent = '';
+          btn.textContent = 'נשמר ✓';
+        } catch (e) { alert('שמירה נכשלה: ' + (e.message || e)); btn.textContent = 'שמור'; }
+        finally { btn.disabled = false; setTimeout(() => { btn.textContent = 'שמור'; }, 1500); }
+      });
+
+      document.getElementById('pbDocs').addEventListener('click', async (ev) => {
+        const dl = ev.target.closest('.pb-dl');
+        const del = ev.target.closest('.pb-del');
+        const zip = ev.target.closest('#pbZip');
+        if (dl) { try { window.open(await window.store.signedUrl(dl.dataset.path), '_blank'); } catch (e) { alert('הורדה נכשלה'); } }
+        if (zip) { zip.disabled = true; zip.textContent = 'מכין...'; try { await pbDownloadAll(provSel.value); } catch (e) { alert('יצירת ZIP נכשלה: ' + (e.message || e)); } finally { renderProviderEntry(); } }
+        if (del) {
+          if (!confirm('למחוק את המסמך?')) return;
+          try {
+            await window.store.deleteProviderDoc({ id: del.dataset.id, storage_path: del.dataset.path });
+            state.documents = await window.store.listDocuments();
+            renderProviderEntry();
+          } catch (e) { alert('מחיקה נכשלה: ' + (e.message || e)); }
+        }
+      });
+    }
+
     function renderPeriods() {
       const latestHost = document.getElementById('latest');
       const archiveHost = document.getElementById('archive');
@@ -736,6 +964,7 @@
       renderPeriods();
       renderWaterInsight();
       renderWaterTrend();
+      renderOtherBills();
       lastResults = null;
       document.getElementById('resultCard').style.display = 'none';
       const b = document.getElementById('saveBtn');

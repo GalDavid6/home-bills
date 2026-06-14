@@ -110,9 +110,45 @@ function waterSeries(history) {
     .map((h) => ({ label: h.label, date: h.date, full: h.waterTotal }));
 }
 
+// Shift a 'YYYY-MM' string by n calendar months. Pure, calendar-correct.
+function monthOffset(ym, n) {
+  const [y, m] = ym.split('-').map(Number);
+  const idx = y * 12 + (m - 1) + n;
+  const ny = Math.floor(idx / 12);
+  const nm = (idx % 12) + 1;
+  return `${ny}-${String(nm).padStart(2, '0')}`;
+}
+
+// Insight for one provider ('bezeq'|'yes') from other_bills rows (ascending by month).
+// current = latest month with a numeric amount; previous = month-1; lastYear = month-12.
+function otherBillInsight(rows, provider) {
+  if (!rows || !rows.length) return null;
+  const has = (r) => typeof r[provider] === 'number' && !isNaN(r[provider]);
+  const withVal = rows.filter(has);
+  if (!withVal.length) return null;
+  const cur = withVal[withVal.length - 1];
+  const byMonth = (m) => rows.find((r) => r.month === m && has(r)) || null;
+  const mk = (r) => r ? { month: r.month, amount: r[provider], pct: pctChange(cur[provider], r[provider]) } : null;
+  const prev = byMonth(monthOffset(cur.month, -1));
+  const ly = byMonth(monthOffset(cur.month, -12));
+  return {
+    current: { month: cur.month, amount: cur[provider] },
+    previous: mk(prev),
+    lastYear: mk(ly),
+  };
+}
+
+// Per-provider monthly series for the trend chart: {month, amount} for each month with a value.
+function otherBillSeries(rows, provider) {
+  if (!rows) return [];
+  return rows
+    .filter((r) => typeof r[provider] === 'number' && !isNaN(r[provider]))
+    .map((r) => ({ month: r.month, amount: r[provider] }));
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { compareCycle, consumptionSeries, dailySeries, daysBetween, pctChange,
-    daysSinceLast, closestToYearAgo, waterInsight, waterSeries, ANOMALY_THRESHOLD };
+    daysSinceLast, closestToYearAgo, waterInsight, waterSeries, monthOffset, otherBillInsight, otherBillSeries, ANOMALY_THRESHOLD };
 }
 if (typeof window !== 'undefined') {
   window.compareCycle = compareCycle;
@@ -124,4 +160,7 @@ if (typeof window !== 'undefined') {
   window.daysBetween = daysBetween;
   window.waterInsight = waterInsight;
   window.waterSeries = waterSeries;
+  window.monthOffset = monthOffset;
+  window.otherBillInsight = otherBillInsight;
+  window.otherBillSeries = otherBillSeries;
 }
