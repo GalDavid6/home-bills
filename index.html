@@ -102,6 +102,29 @@
     #backBtn { width:auto; padding:8px 16px; margin-top:0; }
     #archiveBtn { background:#F3E7D3; color:var(--terra-dk); box-shadow:none; border:1.5px solid var(--line); }
     #archiveBtn:hover { background:#EFE0C8; box-shadow:var(--shadow-sm); }
+    /* water insight card */
+    #waterInsight .wi-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    #waterInsight .wi-head h2 { color:#2F6087; margin:0; }
+    #waterInsight .wi-head .sub { margin-right:auto; font-size:.78rem; color:var(--muted); }
+    #waterInsight table { width:100%; border-collapse:collapse; margin-top:6px; }
+    #waterInsight thead th { font-family:'Rubik',sans-serif; font-weight:600; font-size:.74rem; color:var(--muted);
+                             padding:6px 8px; text-align:left; border-bottom:1.5px solid var(--line); }
+    #waterInsight thead th:first-child { text-align:right; }
+    #waterInsight tbody td { padding:11px 8px; font-size:.92rem; border-bottom:1px solid var(--line); text-align:left; }
+    #waterInsight tbody td:first-child { text-align:right; }
+    #waterInsight tbody tr:last-child td { border-bottom:none; }
+    #waterInsight .when { font-weight:700; color:var(--text); }
+    #waterInsight .when small { display:block; color:var(--muted); font-size:.72rem; font-weight:400; margin-top:1px; }
+    #waterInsight .full { font-family:'Suez One',serif; color:#2F6087; }
+    #waterInsight .per { font-family:'Rubik',sans-serif; font-weight:600; color:var(--text); }
+    #waterInsight .now td { background:#EAF2F8; }
+    #waterInsight .now .per { font-weight:700; color:#2F6087; }
+    #waterInsight .now td:first-child { border-radius:0 10px 10px 0; }
+    #waterInsight .now td:last-child { border-radius:10px 0 0 10px; }
+    #waterInsight .delta { font-family:'Rubik',sans-serif; font-weight:700; font-size:.9rem; white-space:nowrap; }
+    #waterInsight .delta.up { color:var(--up); } #waterInsight .delta.down { color:var(--down); }
+    #waterInsight .delta.zero { color:var(--muted); }
+    #waterInsight .hint { color:var(--muted); font-size:.76rem; margin-top:10px; }
     @keyframes draw { to { stroke-dashoffset:0; } }
     @media (prefers-reduced-motion: reduce) {
       #chart .tline { stroke-dasharray:none!important; stroke-dashoffset:0!important; }
@@ -202,6 +225,7 @@
     </div>
 
     <div id="latest"></div>
+    <div class="card" id="waterInsight" style="display:none"></div>
 
     <div class="card" id="trendCard" style="display:none">
       <h2>📈 מגמת צריכה יומית (קוט"ש ליום)</h2>
@@ -256,6 +280,7 @@
       renderKidInputs();
       renderTrends();
       renderPeriods();
+      renderWaterInsight();
       document.getElementById('archiveBtn').addEventListener('click', () => { location.hash = 'archive'; });
       document.getElementById('backBtn').addEventListener('click', () => {
         history.replaceState(null, '', location.pathname + location.search);
@@ -490,6 +515,34 @@
         docs + `</div>`;
     }
 
+    function renderWaterInsight() {
+      const card = document.getElementById('waterInsight');
+      const w = window.waterInsight(state.history);
+      if (!w || (!w.previous && !w.lastYear)) { card.style.display = 'none'; return; }
+      const fmt = (n) => Number(n).toLocaleString('he-IL');
+      const deltaCell = (row) => {
+        if (!row || row.pct === null || row.pct === undefined) return '<td class="delta zero">—</td>';
+        const cls = row.pct > 0 ? 'up' : row.pct < 0 ? 'down' : 'zero';
+        const arrow = row.pct > 0 ? '▲ +' : row.pct < 0 ? '▼ ' : '';
+        return `<td class="delta ${cls}">${arrow}${row.pct}%</td>`;
+      };
+      const dataRow = (when, row, isNow) =>
+        `<tr class="${isNow ? 'now' : ''}">` +
+        `<td class="when">${when}<small>${row.label}</small></td>` +
+        `<td class="full">${fmt(row.full)} ₪</td>` +
+        `<td class="per">${fmt(row.per)} ₪</td>` +
+        (isNow ? '<td class="delta zero">—</td>' : deltaCell(row)) + `</tr>`;
+      let rows = dataRow('עכשיו', w.current, true);
+      if (w.previous) rows += dataRow('תקופה קודמת', w.previous, false);
+      if (w.lastYear) rows += dataRow('שנה שעברה', w.lastYear, false);
+      card.innerHTML =
+        `<div class="wi-head"><h2>💧 מים — משק הבית</h2><span class="sub">השוואת חשבון</span></div>` +
+        `<table><thead><tr><th>תקופה</th><th>חשבון מלא</th><th>לאדם</th><th>השינוי</th></tr></thead>` +
+        `<tbody>${rows}</tbody></table>` +
+        `<div class="hint">השינוי באחוזים זהה למלא ולאדם (החלוקה ל-4 קבועה). אדום = עלייה, ירוק = ירידה.</div>`;
+      card.style.display = 'block';
+    }
+
     function renderPeriods() {
       const latestHost = document.getElementById('latest');
       const archiveHost = document.getElementById('archive');
@@ -635,6 +688,7 @@
       renderKidInputs();
       renderTrends();
       renderPeriods();
+      renderWaterInsight();
       lastResults = null;
       document.getElementById('resultCard').style.display = 'none';
       const b = document.getElementById('saveBtn');

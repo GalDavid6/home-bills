@@ -82,9 +82,28 @@ function closestToYearAgo(history, currentDate, maxOffsetDays) {
   return Object.assign({}, best, { daysOff: bestOff });
 }
 
+// Family-level water insight for the current (newest) cycle: the full bill and
+// per-person share now, plus how "now" compares (pct) to the previous cycle and
+// to the cycle nearest one year ago. `full` = waterTotal, `per` = waterShare.
+// Returns null for empty history; `previous`/`lastYear` are null when absent.
+function waterInsight(history) {
+  if (!history || !history.length) return null;
+  const cur = history[history.length - 1];
+  const current = { label: cur.label, date: cur.date, full: cur.waterTotal, per: cur.waterShare };
+  const prevCycle = history.length >= 2 ? history[history.length - 2] : null;
+  const previous = prevCycle
+    ? { label: prevCycle.label, full: prevCycle.waterTotal, per: prevCycle.waterShare, pct: pctChange(current.full, prevCycle.waterTotal) }
+    : null;
+  const ly = closestToYearAgo(history, cur.date);
+  const lastYear = ly
+    ? { label: ly.label, full: ly.waterTotal, per: ly.waterShare, pct: pctChange(current.full, ly.waterTotal) }
+    : null;
+  return { current, previous, lastYear };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { compareCycle, consumptionSeries, dailySeries, daysBetween, pctChange,
-    daysSinceLast, closestToYearAgo, ANOMALY_THRESHOLD };
+    daysSinceLast, closestToYearAgo, waterInsight, ANOMALY_THRESHOLD };
 }
 if (typeof window !== 'undefined') {
   window.compareCycle = compareCycle;
@@ -94,4 +113,5 @@ if (typeof window !== 'undefined') {
   window.daysSinceLast = daysSinceLast;
   window.closestToYearAgo = closestToYearAgo;
   window.daysBetween = daysBetween;
+  window.waterInsight = waterInsight;
 }
