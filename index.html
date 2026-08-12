@@ -156,6 +156,8 @@
     #otherBills .delta.up { color:var(--up); } #otherBills .delta.down { color:var(--down); }
     #otherBills .delta.zero { color:var(--muted); }
     #otherBills svg { display:block; width:100%; height:auto; margin-top:6px; }
+    #otherBills .ob-dl { color:var(--terra-dk); cursor:pointer; font-weight:600; text-decoration:none; }
+    #otherBills .docs { margin-top:8px; }
     @keyframes draw { to { stroke-dashoffset:0; } }
     @media (prefers-reduced-motion: reduce) {
       #chart .tline { stroke-dasharray:none!important; stroke-dashoffset:0!important; }
@@ -771,12 +773,15 @@
         const arrow = row.pct > 0 ? '▲ +' : row.pct < 0 ? '▼ ' : '';
         return `<td class="delta ${cls}">${arrow}${row.pct}%</td>`;
       };
-      const dataRow = (when, row, isNow) =>
+      const dashCell = '<td class="delta zero">—</td>';
+      const dataRow = (when, row, isNow, deltaHtml) =>
         `<tr class="${isNow ? 'now' : ''}"><td class="when">${when}<small>${moLabel(row.month)}</small></td>` +
-        `<td class="full">${fmt(row.amount)} ₪</td>` + (isNow ? '<td class="delta zero">—</td>' : delta(row)) + `</tr>`;
-      let rows = dataRow('עכשיו', ins.current, true);
-      if (ins.previous) rows += dataRow('חודש קודם', ins.previous, false);
-      if (ins.lastYear) rows += dataRow('שנה שעברה', ins.lastYear, false);
+        `<td class="full">${fmt(row.amount)} ₪</td>` + deltaHtml + `</tr>`;
+      // "עכשיו" shows the headline change vs the previous month; "חודש קודם" is then a
+      // plain reference (—), and "שנה שעברה" keeps its current-vs-last-year change.
+      let rows = dataRow('עכשיו', ins.current, true, ins.previous ? delta(ins.previous) : dashCell);
+      if (ins.previous) rows += dataRow('חודש קודם', ins.previous, false, dashCell);
+      if (ins.lastYear) rows += dataRow('שנה שעברה', ins.lastYear, false, delta(ins.lastYear));
       return `<table><thead><tr><th>תקופה</th><th>חשבון</th><th>השינוי</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
@@ -809,6 +814,16 @@
       return svg + '</svg>';
     }
 
+    // Read-only 📎 links to a provider's archived bill PDFs, shown in the public card so
+    // viewers (not just the editor) can open them — mirrors the per-period bill links.
+    function provDocsHtml(p) {
+      const docs = (state.documents || []).filter((d) => d.kind === p.key)
+        .sort((a, b) => (a.label < b.label ? 1 : -1));
+      if (!docs.length) return '';
+      return `<div class="docs">` + docs.map((d) =>
+        `<div class="doc">📎 <a class="ob-dl" data-path="${d.storage_path}">${d.label}</a></div>`).join('') + `</div>`;
+    }
+
     function renderOtherBills() {
       const card = document.getElementById('otherBills');
       const blocks = PROVIDERS.map((p) => {
@@ -816,10 +831,14 @@
         if (!insight) return ''; // provider has no data -> skip block
         const trend = provTrendSvg(p);
         return `<div class="prov-block"><div class="wi-head"><h2>${p.emoji} ${p.name}</h2>` +
-          `<span class="sub">מנוי חודשי קבוע</span></div>${insight}${trend}</div>`;
+          `<span class="sub">מנוי חודשי קבוע</span></div>${insight}${trend}${provDocsHtml(p)}</div>`;
       }).filter(Boolean);
       if (!blocks.length) { card.style.display = 'none'; return; }
       card.innerHTML = `<div class="wi-head"><h2>📡 מנויים קבועים</h2></div>${blocks.join('')}`;
+      card.querySelectorAll('.ob-dl').forEach((a) => a.addEventListener('click', async () => {
+        try { window.open(await window.store.signedUrl(a.dataset.path), '_blank'); }
+        catch (e) { alert('הורדה נכשלה: ' + (e.message || e)); }
+      }));
       card.style.display = 'block';
     }
 
