@@ -102,6 +102,12 @@
     #backBtn { width:auto; padding:8px 16px; margin-top:0; }
     #archiveBtn { background:#F3E7D3; color:var(--terra-dk); box-shadow:none; border:1.5px solid var(--line); }
     #archiveBtn:hover { background:#EFE0C8; box-shadow:var(--shadow-sm); }
+    /* electricity household card */
+    #trendCard .wi-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    #trendCard .wi-head h2 { color:var(--terra-dk); margin:0; }
+    #trendCard .wi-head .sub { margin-right:auto; font-size:.78rem; color:var(--muted); }
+    #trendCard .el-stats { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 12px; }
+    #trendCard .el-dl { color:var(--terra-dk); cursor:pointer; font-weight:600; }
     /* water insight card */
     #waterInsight .wi-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
     #waterInsight .wi-head h2 { color:#2F6087; margin:0; }
@@ -124,16 +130,16 @@
     #waterInsight .delta { font-family:'Rubik',sans-serif; font-weight:700; font-size:.9rem; white-space:nowrap; }
     #waterInsight .delta.up { color:var(--up); } #waterInsight .delta.down { color:var(--down); }
     #waterInsight .delta.zero { color:var(--muted); }
-    #waterInsight .hint { color:var(--muted); font-size:.76rem; margin-top:10px; }
-    /* water trend chart */
-    #waterTrend .wi-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
-    #waterTrend .wi-head h2 { font-family:'Suez One',serif; font-weight:400; color:#2F6087; font-size:1.12rem; margin:0; }
-    #waterTrend .wi-head .sub { margin-right:auto; font-size:.78rem; color:var(--muted); }
-    #waterTrend svg { display:block; width:100%; height:auto; }
-    #waterTrend .hint { color:var(--muted); font-size:.76rem; margin-top:10px; }
-    #waterTrend .wbar { transform-box:fill-box; transform-origin:bottom; animation:wgrow .8s cubic-bezier(.3,.7,.3,1) both; }
+    #waterInsight .hint { color:var(--muted); font-size:.74rem; margin-top:8px; }
+    /* water trend chart (merged into the water card) */
+    #waterInsight .wt-head { display:flex; align-items:center; gap:8px; margin:12px 0 2px;
+                             padding-top:10px; border-top:1px dashed var(--line); }
+    #waterInsight .wt-head .sub { margin-right:auto; font-size:.78rem; color:#2F6087; font-weight:600; }
+    #waterInsight svg { display:block; width:100%; height:auto; margin-top:2px; }
+    #waterInsight .wa-dl { color:#2F6087; cursor:pointer; font-weight:600; }
+    #waterInsight .wbar { transform-box:fill-box; transform-origin:bottom; animation:wgrow .8s cubic-bezier(.3,.7,.3,1) both; }
     @keyframes wgrow { from { transform:scaleY(0); } to { transform:scaleY(1); } }
-    @media (prefers-reduced-motion: reduce) { #waterTrend .wbar { animation:none; } }
+    @media (prefers-reduced-motion: reduce) { #waterInsight .wbar { animation:none; } }
     /* Provider subscriptions card reuses the water-card treatment (provider hue lives on the bars). */
     #otherBills > .wi-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
     #otherBills > .wi-head h2 { font-family:'Suez One',serif; font-weight:400; color:#2F6087; font-size:1.12rem; margin:0; }
@@ -198,6 +204,10 @@
     .chip { display:inline-flex; align-items:center; gap:6px; background:#FFF8EC; border:1px solid var(--line);
             border-radius:20px; padding:5px 12px; font-size:.82rem; font-weight:600; color:var(--text); }
     .chip b { color:var(--terra-dk); font-weight:700; }
+    .rate-alert { margin:9px 0 4px; padding:8px 12px; border-radius:10px; font-size:.85rem; font-weight:600; }
+    .rate-alert.up { background:#FBECE7; color:var(--up); }
+    .rate-alert.down { background:#EDF3E7; color:var(--down); }
+    .el-stats { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
     .chip.gap { background:#F4EAD8; color:var(--muted); } .chip.gap b { color:var(--text); }
     .rep-hero { background:linear-gradient(135deg, var(--terra), var(--terra-dk)); color:#FFF6EE;
                 border-radius:16px; padding:16px 18px; margin:14px 0; text-align:center;
@@ -236,7 +246,8 @@
     .ph-col { flex:1 1 45%; text-align:center; }
     .ph-cap { font-size:.8rem; color:var(--muted); margin-bottom:4px; }
     .ph-delta { flex-basis:100%; text-align:center; font-weight:600; margin-top:6px; }
-    .rep .wa-copy { margin-top:12px; }
+    .rep-top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .rep .wa-copy-sm { width:auto; padding:5px 12px; font-size:.8rem; margin-top:0; white-space:nowrap; }
 
     #otherBills .prov-block { margin-top: 18px; }
     #otherBills .prov-block:first-of-type { margin-top: 6px; }
@@ -306,16 +317,20 @@
     </div>
 
     <div id="latest"></div>
-    <div class="card" id="waterInsight" style="display:none"></div>
-    <div class="card" id="waterTrend" style="display:none"></div>
-    <div class="card" id="otherBills" style="display:none"></div>
 
     <div class="card" id="trendCard" style="display:none">
-      <h2>📈 מגמת צריכה יומית (קוט"ש ליום)</h2>
-      <div id="legend" class="legend"></div>
-      <div id="chart"></div>
-      <div class="hint">מנורמל לפי ימים בין קריאות — משווה עוצמת צריכה אמיתית, ללא תלות באורך התקופה.</div>
+      <div class="wi-head"><h2>⚡ חשמל</h2><span class="sub">צריכה יומית לאורך זמן</span></div>
+      <div id="elSummary"></div>
+      <div id="elChart">
+        <div id="legend" class="legend"></div>
+        <div id="chart"></div>
+        <div class="hint">מנורמל לפי ימים בין קריאות — משווה עוצמת צריכה אמיתית, ללא תלות באורך התקופה.</div>
+      </div>
+      <div id="elDocs"></div>
     </div>
+
+    <div class="card" id="waterInsight" style="display:none"></div>
+    <div class="card" id="otherBills" style="display:none"></div>
 
     <button id="archiveBtn" style="display:none"></button>
 
@@ -391,7 +406,6 @@
       renderTrends();
       renderPeriods();
       renderWaterInsight();
-      renderWaterTrend();
       renderOtherBills();
       if (session) { renderProviderEntry(); wireProviderEntry(); }
       document.getElementById('archiveBtn').addEventListener('click', () => { location.hash = 'archive'; });
@@ -462,11 +476,60 @@
       return { cycles, rates };
     }
 
+    // Read-only 📎 links to every electricity-bill PDF, newest first, in the ⚡ card.
+    function elDocsHtml() {
+      const docs = (state.documents || []).filter((d) => d.kind === 'electricity_bill')
+        .sort((a, b) => (a.label < b.label ? 1 : -1));
+      if (!docs.length) return '';
+      return `<div class="docs">` + docs.map((d) =>
+        `<div class="doc">📎 <a class="el-dl" data-path="${d.storage_path}">${d.label || d.kind}</a></div>`).join('') + `</div>`;
+    }
+
     function renderTrends() {
       const card = document.getElementById('trendCard');
+      const hist = state.history;
       const { cycles, rates } = buildChartData();
-      if (cycles.length < 2) { card.style.display = 'none'; return; }
+      const hasChart = cycles.length >= 2;
+      if (!hist.length && !hasChart) { card.style.display = 'none'; return; }
       card.style.display = 'block';
+
+      // Household summary for the latest period: total consumption, total ₪, tariff.
+      const summaryHost = document.getElementById('elSummary');
+      if (hist.length) {
+        const h = hist[hist.length - 1];
+        const names = periodKids(h);
+        const totC = Math.round(names.reduce((s, n) => s + (h.kids[n].c || 0), 0));
+        const totE = names.reduce((s, n) => s + (h.kids[n].e || 0), 0);
+        summaryHost.innerHTML =
+          `<div class="el-stats">` +
+          `<span class="chip">⚡ <b>${totC.toLocaleString('he-IL')}</b> קוט"ש</span>` +
+          `<span class="chip">💰 <b>${totE.toLocaleString('he-IL')}</b> ₪</span>` +
+          (h.tariff != null ? `<span class="chip gap">תעריף <b>${h.tariff}</b> ₪/קוט"ש</span>` : '') +
+          `</div>`;
+      } else summaryHost.innerHTML = '';
+
+      // Rate-change alert: flag when the electricity tariff changed vs the previous cycle.
+      if (hist.length >= 2) {
+        const cur = hist[hist.length - 1], prv = hist[hist.length - 2];
+        if (cur.tariff != null && prv.tariff != null && Number(cur.tariff) !== Number(prv.tariff)) {
+          const up = Number(cur.tariff) > Number(prv.tariff);
+          const pct = window.pctChange(Number(cur.tariff), Number(prv.tariff));
+          summaryHost.insertAdjacentHTML('beforeend',
+            `<div class="rate-alert ${up ? 'up' : 'down'}">📢 תעריף החשמל ${up ? 'עלה ▲' : 'ירד ▼'} ` +
+            `מ-${prv.tariff} ל-<b>${cur.tariff}</b> ₪/קוט"ש${pct != null ? ` (${pct > 0 ? '+' : ''}${pct}%)` : ''}</div>`);
+        }
+      }
+
+      // Electricity-bill links (shown whenever any exist, chart or not).
+      document.getElementById('elDocs').innerHTML = elDocsHtml();
+      document.querySelectorAll('#trendCard .el-dl').forEach((a) => a.addEventListener('click', async () => {
+        try { window.open(await window.store.signedUrl(a.dataset.path), '_blank'); }
+        catch (e) { alert('הורדה נכשלה: ' + (e.message || e)); }
+      }));
+
+      const chartWrap = document.getElementById('elChart');
+      if (!hasChart) { chartWrap.style.display = 'none'; return; }
+      chartWrap.style.display = 'block';
 
       document.getElementById('legend').innerHTML = state.kids.map((k) =>
         `<span class="lg"><i style="background:${KID_COLORS[k.name] || '#888'}"></i>${k.name}</span>`
@@ -568,7 +631,7 @@
       document.getElementById('backupCard').style.display = editor ? 'block' : 'none';
       document.getElementById('providerEntry').style.display = editor ? 'block' : 'none';
       document.getElementById('authBar').innerHTML =
-        `<button id="logoutBtn" class="secondary" style="width:auto;padding:6px 14px">התנתק</button>`;
+        `<button id="logoutBtn" title="התנתק" class="secondary" style="width:auto;padding:4px 8px;font-size:1rem;line-height:1">🚪</button>`;
       document.getElementById('logoutBtn').addEventListener('click', async () => {
         await window.store.signOut(); location.reload();
       });
@@ -674,27 +737,26 @@
         period: h.label, waterTotal: h.waterShare * 4, tariff: h.tariff, waterShare: h.waterShare, kids: kidsForMsg,
       });
 
-      let docs = '';
-      if (session) {
-        // Meter photos are shown per-kid in the "📷 תצלומי מונה" comparison expander,
-        // so only the bills are listed here as 📎 links.
-        const mine = (state.documents || []).filter((d) => d.period_id === h.id && d.kind !== 'meter_photo');
-        docs = `<div class="docs">${mine.map(docLine).join('')}${window.IS_EDITOR ? uploadForm(h.id) : ''}</div>`;
-      }
+      // Bills now live in the ⚡ and 💧 cards; the per-period docs block is editor-only
+      // and holds just the upload form (meter photos stay in the 📷 per-kid expander).
+      const docs = window.IS_EDITOR ? `<div class="docs">${uploadForm(h.id)}</div>` : '';
 
       return `<div class="rep card">` +
-        `<div class="rep-head"><span class="rep-label">${h.label}</span><div class="chips">${chips}</div></div>` +
+        `<div class="rep-head">` +
+          `<div class="rep-top"><span class="rep-label">${h.label}</span>` +
+          `<button class="secondary wa-copy wa-copy-sm">📋 העתק ל-WhatsApp</button></div>` +
+          `<div class="chips">${chips}</div></div>` +
         hero + kidsHtml +
         `<pre class="wa-text" hidden>${msg}</pre>` +
-        `<button class="secondary wa-copy">📋 העתק הודעה ל-WhatsApp</button>` +
         docs + `</div>`;
     }
 
-    function renderWaterTrend() {
-      const card = document.getElementById('waterTrend');
+    // Water ₪ trend as a compact bar SVG string; '' when there aren't 2+ periods.
+    // Rendered inside the merged 💧 water card by renderWaterInsight().
+    function waterTrendSvg() {
       const series = window.waterSeries(state.history);
-      if (series.length < 2) { card.style.display = 'none'; return; }
-      const W = 520, H = 250, mL = 44, mR = 14, mT = 14, mB = 56;
+      if (series.length < 2) return '';
+      const W = 520, H = 180, mL = 44, mR = 14, mT = 12, mB = 46;
       const px0 = mL, px1 = W - mR, py0 = mT, py1 = H - mB;
       const vals = series.map((d) => d.full);
       const min = Math.min(...vals), max = Math.max(...vals), range = Math.max(max - min, 1);
@@ -717,18 +779,25 @@
         const ly = py1 + 13;
         svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${ly}" text-anchor="middle" font-size="8" fill="${now ? '#2F6087' : '#9C8B77'}" ${now ? 'font-weight="700"' : ''} transform="rotate(-32 ${(x + bw / 2).toFixed(1)} ${ly})">${d.label}</text>`;
       });
-      svg += '</svg>';
-      card.innerHTML =
-        `<div class="wi-head"><h2>💧 מגמת חשבון המים</h2><span class="sub">₪ לאורך זמן</span></div>` +
-        svg +
-        `<div class="hint">סכום החשבון המלא של הבית בכל תקופה.</div>`;
-      card.style.display = 'block';
+      return svg + '</svg>';
+    }
+
+    // Read-only 📎 links to every water-bill PDF, newest first, in the 💧 card.
+    function waterDocsHtml() {
+      const docs = (state.documents || []).filter((d) => d.kind === 'water_bill')
+        .sort((a, b) => (a.label < b.label ? 1 : -1));
+      if (!docs.length) return '';
+      return `<div class="docs">` + docs.map((d) =>
+        `<div class="doc">📎 <a class="wa-dl" data-path="${d.storage_path}">${d.label || d.kind}</a></div>`).join('') + `</div>`;
     }
 
     function renderWaterInsight() {
       const card = document.getElementById('waterInsight');
       const w = window.waterInsight(state.history);
-      if (!w || (!w.previous && !w.lastYear)) { card.style.display = 'none'; return; }
+      const trend = waterTrendSvg();
+      const docsHtml = waterDocsHtml();
+      const hasTable = w && (w.previous || w.lastYear);
+      if (!hasTable && !trend && !docsHtml) { card.style.display = 'none'; return; }
       const fmt = (n) => Number(n).toLocaleString('he-IL');
       const deltaCell = (row) => {
         if (!row || row.pct === null || row.pct === undefined) return '<td class="delta zero">—</td>';
@@ -746,14 +815,25 @@
       // "עכשיו" shows the headline change vs the previous period (w.previous.pct is
       // current-vs-previous). "תקופה קודמת" then becomes a plain reference (—), and
       // "שנה שעברה" keeps its current-vs-last-year change.
-      let rows = dataRow('עכשיו', w.current, true, w.previous ? deltaCell(w.previous) : dashCell);
-      if (w.previous) rows += dataRow('תקופה קודמת', w.previous, false, dashCell);
-      if (w.lastYear) rows += dataRow('שנה שעברה', w.lastYear, false, deltaCell(w.lastYear));
+      let tableHtml = '';
+      if (hasTable) {
+        let rows = dataRow('עכשיו', w.current, true, w.previous ? deltaCell(w.previous) : dashCell);
+        if (w.previous) rows += dataRow('תקופה קודמת', w.previous, false, dashCell);
+        if (w.lastYear) rows += dataRow('שנה שעברה', w.lastYear, false, deltaCell(w.lastYear));
+        tableHtml =
+          `<table><thead><tr><th>תקופה</th><th>חשבון מלא</th><th>לאדם</th><th>השינוי</th></tr></thead>` +
+          `<tbody>${rows}</tbody></table>` +
+          `<div class="hint">השינוי באחוזים זהה למלא ולאדם (החלוקה ל-4 קבועה). אדום = עלייה, ירוק = ירידה.</div>`;
+      }
+      const trendHtml = trend
+        ? `<div class="wt-head"><span class="sub">מגמת החשבון (₪)</span></div>${trend}` : '';
       card.innerHTML =
         `<div class="wi-head"><h2>💧 מים — משק הבית</h2><span class="sub">השוואת חשבון</span></div>` +
-        `<table><thead><tr><th>תקופה</th><th>חשבון מלא</th><th>לאדם</th><th>השינוי</th></tr></thead>` +
-        `<tbody>${rows}</tbody></table>` +
-        `<div class="hint">השינוי באחוזים זהה למלא ולאדם (החלוקה ל-4 קבועה). אדום = עלייה, ירוק = ירידה.</div>`;
+        tableHtml + trendHtml + docsHtml;
+      card.querySelectorAll('.wa-dl').forEach((a) => a.addEventListener('click', async () => {
+        try { window.open(await window.store.signedUrl(a.dataset.path), '_blank'); }
+        catch (e) { alert('הורדה נכשלה: ' + (e.message || e)); }
+      }));
       card.style.display = 'block';
     }
 
@@ -782,7 +862,14 @@
       let rows = dataRow('עכשיו', ins.current, true, ins.previous ? delta(ins.previous) : dashCell);
       if (ins.previous) rows += dataRow('חודש קודם', ins.previous, false, dashCell);
       if (ins.lastYear) rows += dataRow('שנה שעברה', ins.lastYear, false, delta(ins.lastYear));
-      return `<table><thead><tr><th>תקופה</th><th>חשבון</th><th>השינוי</th></tr></thead><tbody>${rows}</tbody></table>`;
+      // Price-change alert: a fixed monthly subscription that moved ≥5% vs last month.
+      let alert = '';
+      if (ins.previous && ins.previous.pct != null && Math.abs(ins.previous.pct) >= 5) {
+        const up = ins.previous.pct > 0;
+        alert = `<div class="rate-alert ${up ? 'up' : 'down'}">📢 המחיר ${up ? 'עלה ▲' : 'ירד ▼'} ` +
+          `${ins.previous.pct > 0 ? '+' : ''}${ins.previous.pct}% מהחודש הקודם</div>`;
+      }
+      return alert + `<table><thead><tr><th>תקופה</th><th>חשבון</th><th>השינוי</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     function provTrendSvg(p) {
@@ -991,7 +1078,7 @@
         else grid.querySelector('.ph-prev').closest('.ph-col').style.display = 'none';
       }));
       document.querySelectorAll('.rep .wa-copy').forEach((btn) => btn.addEventListener('click', async () => {
-        const txt = btn.parentElement.querySelector('.wa-text').textContent;
+        const txt = btn.closest('.rep').querySelector('.wa-text').textContent;
         await navigator.clipboard.writeText(txt);
         const orig = btn.textContent; btn.textContent = 'הועתק ✓';
         setTimeout(() => { btn.textContent = orig; }, 1500);
@@ -1107,7 +1194,6 @@
       renderTrends();
       renderPeriods();
       renderWaterInsight();
-      renderWaterTrend();
       renderOtherBills();
       lastResults = null;
       document.getElementById('resultCard').style.display = 'none';
