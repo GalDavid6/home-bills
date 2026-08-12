@@ -732,15 +732,19 @@
         const arrow = row.pct > 0 ? '▲ +' : row.pct < 0 ? '▼ ' : '';
         return `<td class="delta ${cls}">${arrow}${row.pct}%</td>`;
       };
-      const dataRow = (when, row, isNow) =>
+      const dashCell = '<td class="delta zero">—</td>';
+      const dataRow = (when, row, isNow, deltaHtml) =>
         `<tr class="${isNow ? 'now' : ''}">` +
         `<td class="when">${when}<small>${row.label}</small></td>` +
         `<td class="full">${fmt(row.full)} ₪</td>` +
         `<td class="per">${fmt(row.per)} ₪</td>` +
-        (isNow ? '<td class="delta zero">—</td>' : deltaCell(row)) + `</tr>`;
-      let rows = dataRow('עכשיו', w.current, true);
-      if (w.previous) rows += dataRow('תקופה קודמת', w.previous, false);
-      if (w.lastYear) rows += dataRow('שנה שעברה', w.lastYear, false);
+        deltaHtml + `</tr>`;
+      // "עכשיו" shows the headline change vs the previous period (w.previous.pct is
+      // current-vs-previous). "תקופה קודמת" then becomes a plain reference (—), and
+      // "שנה שעברה" keeps its current-vs-last-year change.
+      let rows = dataRow('עכשיו', w.current, true, w.previous ? deltaCell(w.previous) : dashCell);
+      if (w.previous) rows += dataRow('תקופה קודמת', w.previous, false, dashCell);
+      if (w.lastYear) rows += dataRow('שנה שעברה', w.lastYear, false, deltaCell(w.lastYear));
       card.innerHTML =
         `<div class="wi-head"><h2>💧 מים — משק הבית</h2><span class="sub">השוואת חשבון</span></div>` +
         `<table><thead><tr><th>תקופה</th><th>חשבון מלא</th><th>לאדם</th><th>השינוי</th></tr></thead>` +
