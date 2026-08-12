@@ -21,6 +21,9 @@ function formatMessage(r) {
       lines.push(`• ${k.name}: ${signed(k.pct)}%`);
     }
   }
+  lines.push('');
+  lines.push('🔗 לצפייה בפירוט, גרפים ומסמכים: https://galdavid6.github.io/home-bills/');
+  lines.push('👁️ לחצו "צפייה" והזינו את הסיסמה שקיבלתם.');
   return lines.join('\n');
 }
 
