@@ -247,6 +247,8 @@
     .ph-cap { font-size:.8rem; color:var(--muted); margin-bottom:4px; }
     .ph-delta { flex-basis:100%; text-align:center; font-weight:600; margin-top:6px; }
     .rep-top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .rep-actions { display:inline-flex; align-items:center; gap:8px; }
+    .logout-icon { width:auto; padding:4px 8px; font-size:1rem; line-height:1; }
     .rep .wa-copy-sm { width:auto; padding:5px 12px; font-size:.8rem; margin-top:0; white-space:nowrap; }
 
     #otherBills .prov-block { margin-top: 18px; }
@@ -634,11 +636,7 @@
       document.getElementById('inputCard').style.display = editor ? 'block' : 'none';
       document.getElementById('backupCard').style.display = editor ? 'block' : 'none';
       document.getElementById('providerEntry').style.display = editor ? 'block' : 'none';
-      document.getElementById('authBar').innerHTML =
-        `<button id="logoutBtn" title="התנתק" class="secondary" style="width:auto;padding:4px 8px;font-size:1rem;line-height:1">🚪</button>`;
-      document.getElementById('logoutBtn').addEventListener('click', async () => {
-        await window.store.signOut(); location.reload();
-      });
+      document.getElementById('authBar').innerHTML = ''; // logout icon now lives in the report header
       window.IS_EDITOR = editor; // used by archive doc rendering in a later task
     }
 
@@ -748,7 +746,10 @@
       return `<div class="rep card">` +
         `<div class="rep-head">` +
           `<div class="rep-top"><span class="rep-label">${h.label}</span>` +
-          `<button class="secondary wa-copy wa-copy-sm">📋 העתק ל-WhatsApp</button></div>` +
+          `<span class="rep-actions">` +
+          `<button class="secondary wa-copy wa-copy-sm">📋 העתק ל-WhatsApp</button>` +
+          (isNewest ? `<button id="logoutBtn" title="התנתק" class="secondary logout-icon">🚪</button>` : '') +
+          `</span></div>` +
           `<div class="chips">${chips}</div></div>` +
         hero + kidsHtml +
         `<pre class="wa-text" hidden>${msg}</pre>` +
@@ -815,8 +816,8 @@
       // "שנה שעברה" keeps its current-vs-last-year change.
       let tableHtml = '';
       if (hasTable) {
-        let rows = dataRow('עכשיו', w.current, true, w.previous ? deltaCell(w.previous) : dashCell);
-        if (w.previous) rows += dataRow('תקופה קודמת', w.previous, false, dashCell);
+        let rows = dataRow('עכשיו', w.current, true, dashCell);
+        if (w.previous) rows += dataRow('תקופה קודמת', w.previous, false, deltaCell(w.previous));
         if (w.lastYear) rows += dataRow('שנה שעברה', w.lastYear, false, deltaCell(w.lastYear));
         tableHtml =
           `<table><thead><tr><th>תקופה</th><th>חשבון מלא</th><th>לאדם</th><th>השינוי</th></tr></thead>` +
@@ -1055,6 +1056,8 @@
     }
 
     function wireReportActions() {
+      const lb = document.getElementById('logoutBtn');
+      if (lb) lb.addEventListener('click', async () => { await window.store.signOut(); location.reload(); });
       document.querySelectorAll('.rep .ly-toggle').forEach((btn) => btn.addEventListener('click', () => {
         const open = btn.getAttribute('aria-expanded') === 'true';
         btn.setAttribute('aria-expanded', String(!open));
