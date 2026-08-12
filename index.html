@@ -674,7 +674,9 @@
 
       let docs = '';
       if (session) {
-        const mine = (state.documents || []).filter((d) => d.period_id === h.id);
+        // Meter photos are shown per-kid in the "📷 תצלומי מונה" comparison expander,
+        // so only the bills are listed here as 📎 links.
+        const mine = (state.documents || []).filter((d) => d.period_id === h.id && d.kind !== 'meter_photo');
         docs = `<div class="docs">${mine.map(docLine).join('')}${window.IS_EDITOR ? uploadForm(h.id) : ''}</div>`;
       }
 
