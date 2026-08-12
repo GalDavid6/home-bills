@@ -24,7 +24,8 @@ async function saveCycle(results, readingDate, baselineByName) {
   const { period, readings } = window.cycleToRows(results, readingDate);
   const { data: inserted, error: e1 } = await _sb.from('periods').insert(period).select().single();
   if (e1) throw e1;
-  const rows = readings.map((r) => Object.assign({ period_id: inserted.id }, r));
+  const rows = readings.map((r) =>
+    Object.assign({ period_id: inserted.id, current_reading: baselineByName[r.kid] ?? null }, r));
   const { error: e2 } = await _sb.from('electricity_readings').insert(rows);
   if (e2) throw e2;
   const baseRows = KID_ORDER.map((name) => ({ kid: name, last_reading: baselineByName[name] }));
@@ -36,10 +37,13 @@ async function getSession() {
   const { data } = await _sb.auth.getSession();
   return data.session;
 }
-async function signIn(email) {
-  return _sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+async function signInWithPassword(email, password) {
+  return _sb.auth.signInWithPassword({ email, password });
 }
 async function signOut() { return _sb.auth.signOut(); }
+async function updatePassword(password) {
+  return _sb.auth.updateUser({ password });
+}
 
 async function listDocuments() {
   const { data, error } = await _sb.from('documents').select('*');
@@ -92,6 +96,6 @@ async function deleteDocument(doc) {
   if (error) throw error;
 }
 
-window.store = { initSupabase, loadState, saveCycle, getSession, signIn, signOut,
-  listDocuments, uploadDocument, signedUrl, deleteDocument,
+window.store = { initSupabase, loadState, saveCycle, getSession, signInWithPassword, signOut,
+  updatePassword, listDocuments, uploadDocument, signedUrl, deleteDocument,
   saveProviderBill, deleteProviderDoc, KID_ORDER };

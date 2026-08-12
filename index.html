@@ -223,13 +223,24 @@
     .ly-panel .inner { margin-top:9px; padding:10px 12px; background:#F4EAD8; border-radius:10px;
                        font-size:.84rem; color:var(--text); line-height:1.5; }
     .ly-panel .inner .ydate { color:var(--muted); }
+    .ph-toggle { margin-top:9px; background:none; border:none; color:var(--sage); font-family:'Rubik',sans-serif;
+                 font-weight:600; font-size:.82rem; cursor:pointer; padding:0; width:auto; box-shadow:none;
+                 display:inline-flex; align-items:center; gap:5px; }
+    .ph-toggle:hover { transform:none; box-shadow:none; filter:none; }
+    .ph-toggle .chev { transition:transform .2s; } .ph-toggle[aria-expanded="true"] .chev { transform:rotate(180deg); }
+    .ph-panel { max-height:0; overflow:hidden; transition:max-height .3s ease; }
+    .ph-panel.open { max-height:1200px; }
+    .ph-grid { display:flex; gap:10px; flex-wrap:wrap; padding:8px 0; }
+    .ph-col { flex:1 1 45%; text-align:center; }
+    .ph-cap { font-size:.8rem; color:var(--muted); margin-bottom:4px; }
+    .ph-delta { flex-basis:100%; text-align:center; font-weight:600; margin-top:6px; }
     .rep .wa-copy { margin-top:12px; }
 
     #otherBills .prov-block { margin-top: 18px; }
     #otherBills .prov-block:first-of-type { margin-top: 6px; }
     @keyframes rise { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
     @keyframes pop { from { opacity:0; transform:scale(.6) rotate(-8deg); } to { opacity:1; transform:none; } }
-    @media (prefers-reduced-motion: reduce) { *{animation:none!important} .rep .ly-panel{transition:none} }
+    @media (prefers-reduced-motion: reduce) { *{animation:none!important} .rep .ly-panel,.rep .ph-panel{transition:none} }
   </style>
 </head>
 <body>
@@ -241,6 +252,36 @@
     <div class="hero-rule"></div>
   </header>
   <div id="authBar" style="text-align:center; margin-bottom:14px;"></div>
+
+  <div id="welcomeView" style="display:none">
+    <div class="card" style="max-width:420px;margin:24px auto;text-align:center">
+      <div class="hero-emoji">🏠</div>
+      <h2>חשבונות בית</h2>
+      <p class="hero-sub">היכנסו כדי לצפות בנתונים</p>
+      <div class="row-btns" style="justify-content:center;margin-top:12px">
+        <button id="viewBtn" class="secondary" style="width:auto">👁️ צפייה</button>
+        <button id="editBtn" class="secondary" style="width:auto">✏️ הזנת תקופה</button>
+      </div>
+      <div id="pwWrap" style="display:none;margin-top:14px">
+        <input id="pwInput" type="password" placeholder="סיסמה" autocomplete="current-password" />
+        <button id="pwGo">כניסה</button>
+        <div id="pwErr" style="color:#b00;font-size:.85rem;margin-top:6px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="recoveryView" style="display:none">
+    <div class="card" style="max-width:420px;margin:24px auto;text-align:center">
+      <div class="hero-emoji">🔑</div>
+      <h2>הגדרת סיסמה חדשה</h2>
+      <p class="hero-sub">הזן סיסמה חדשה לחשבון העורך</p>
+      <div style="margin-top:14px">
+        <input id="rcInput" type="password" placeholder="סיסמה חדשה" autocomplete="new-password" />
+        <button id="rcGo">שמור סיסמה</button>
+        <div id="rcErr" style="color:#b00;font-size:.85rem;margin-top:6px"></div>
+      </div>
+    </div>
+  </div>
 
   <div id="homeView">
     <div class="card" id="inputCard">
@@ -308,6 +349,7 @@
   <script src="calc.js"></script>
   <script src="format.js"></script>
   <script src="history.js"></script>
+  <script src="meter-photos.js"></script>
   <script src="validate.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
@@ -335,10 +377,13 @@
     window.addEventListener('hashchange', applyView);
 
     async function boot() {
+      const isRecovery = window.location.hash.includes('type=recovery');
       window.store.initSupabase();
       session = await window.store.getSession();
+      if (isRecovery) { renderRecovery(); return; }
+      if (!session) { renderWelcome(); return; }
       state = await window.store.loadState();
-      state.documents = session ? await window.store.listDocuments() : [];
+      state.documents = await window.store.listDocuments();
       applyAuthMode();
       renderKidInputs();
       renderTrends();
@@ -470,28 +515,68 @@
       document.getElementById('chart').innerHTML = svg + '</svg>';
     }
 
+    function renderWelcome() {
+      document.getElementById('welcomeView').style.display = 'block';
+      document.getElementById('homeView').style.display = 'none';
+      document.getElementById('archiveView').style.display = 'none';
+      document.getElementById('authBar').innerHTML = '';
+      let role = null;
+      const wrap = document.getElementById('pwWrap');
+      const err = document.getElementById('pwErr');
+      const pick = (r) => { role = r; wrap.style.display = 'block';
+        document.getElementById('pwInput').focus(); err.textContent = ''; };
+      document.getElementById('viewBtn').addEventListener('click', () => pick('viewer'));
+      document.getElementById('editBtn').addEventListener('click', () => pick('editor'));
+      document.getElementById('pwGo').addEventListener('click', submit);
+      document.getElementById('pwInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+      async function submit() {
+        if (!role) { err.textContent = 'בחר צפייה או הזנה'; return; }
+        const email = role === 'editor' ? window.CONFIG.EDITOR_EMAIL : window.CONFIG.VIEWER_EMAIL;
+        const pw = document.getElementById('pwInput').value;
+        const { error } = await window.store.signInWithPassword(email, pw);
+        if (error) { err.textContent = 'סיסמה שגויה'; return; }
+        location.reload();
+      }
+    }
+
+    function renderRecovery() {
+      document.getElementById('recoveryView').style.display = 'block';
+      document.getElementById('welcomeView').style.display = 'none';
+      document.getElementById('homeView').style.display = 'none';
+      document.getElementById('archiveView').style.display = 'none';
+      document.getElementById('authBar').innerHTML = '';
+      const err = document.getElementById('rcErr');
+      const submit = async () => {
+        const pw = document.getElementById('rcInput').value;
+        if (!pw || pw.length < 6) { err.textContent = 'סיסמה חייבת לפחות 6 תווים'; return; }
+        const { error } = await window.store.updatePassword(pw);
+        if (error) { err.textContent = 'שגיאה: ' + error.message; return; }
+        await window.store.signOut();
+        location.href = location.origin + location.pathname; // clean URL -> welcome page
+      };
+      document.getElementById('rcGo').addEventListener('click', submit);
+      document.getElementById('rcInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+    }
+
     function applyAuthMode() {
-      const editor = !!session;
+      document.getElementById('welcomeView').style.display = 'none';
+      applyView(); // restores homeView/archiveView per hash
+      const editor = session && session.user && session.user.id === window.CONFIG.OWNER_UID;
       document.getElementById('inputCard').style.display = editor ? 'block' : 'none';
       document.getElementById('backupCard').style.display = editor ? 'block' : 'none';
       document.getElementById('providerEntry').style.display = editor ? 'block' : 'none';
-      document.getElementById('authBar').innerHTML = editor
-        ? `<button id="logoutBtn" class="secondary" style="width:auto;padding:6px 14px">התנתק (עורך)</button>`
-        : `<button id="loginBtn" class="secondary" style="width:auto;padding:6px 14px">התחבר (עורך)</button>`;
-      const lb = document.getElementById('loginBtn');
-      if (lb) lb.addEventListener('click', async () => {
-        const email = prompt('הזן אימייל לקבלת קישור כניסה:');
-        if (!email) return;
-        const { error } = await window.store.signIn(email.trim());
-        alert(error ? ('שגיאה: ' + error.message) : 'נשלח קישור כניסה למייל. פתח אותו במכשיר הזה.');
+      document.getElementById('authBar').innerHTML =
+        `<button id="logoutBtn" class="secondary" style="width:auto;padding:6px 14px">התנתק</button>`;
+      document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await window.store.signOut(); location.reload();
       });
-      const ob = document.getElementById('logoutBtn');
-      if (ob) ob.addEventListener('click', async () => { await window.store.signOut(); location.reload(); });
+      window.IS_EDITOR = editor; // used by archive doc rendering in a later task
     }
 
     function docLine(d) {
-      return `<div class="doc">📎 <a data-path="${d.storage_path}" class="dl">${d.label || d.kind}</a>` +
-        `<button class="del" data-id="${d.id}" data-path="${d.storage_path}">מחק</button></div>`;
+      const del = window.IS_EDITOR
+        ? `<button class="del" data-id="${d.id}" data-path="${d.storage_path}">מחק</button>` : '';
+      return `<div class="doc">📎 <a data-path="${d.storage_path}" class="dl">${d.label || d.kind}</a>${del}</div>`;
     }
 
     function uploadForm(periodId) {
@@ -510,7 +595,7 @@
       return state.kids.map((k) => k.name).filter((n) => h.kids[n]);
     }
 
-    function kidLine(h, name, ly, prevE) {
+    function kidLine(h, name, ly, prevE, periodId, prevPeriodId) {
       const k = h.kids[name];
       const water = h.waterShare;
       const total = k.e + water;
@@ -532,9 +617,28 @@
           `<div class="ly-panel"><div class="inner"><span class="ydate">לפני שנה (${ly.label}):</span> ` +
           `${Math.round(lyk.c)} קוט"ש · ${lyk.e} ₪${yoyTxt}</div></div>`;
       }
+      let photo_html = '';
+      const pair = window.pairMeterPhoto(state.documents, periodId, prevPeriodId, name);
+      if (pair.current) {
+        // Absolute readings; null for legacy periods -> fall back to plain קודם/עכשיו captions.
+        const curR = h.kids[name] ? h.kids[name].reading : null;
+        const prevEntry = prevPeriodId ? state.history.find((x) => x.id === prevPeriodId) : null;
+        const prevR = prevEntry && prevEntry.kids[name] ? prevEntry.kids[name].reading : null;
+        const curCap = curR != null ? `עכשיו · ${curR}` : 'עכשיו';
+        const prevCap = prevR != null ? `קודם · ${prevR}` : 'קודם';
+        photo_html =
+          `<button class="ph-toggle" aria-expanded="false" ` +
+          `data-cur="${pair.current.storage_path}" ` +
+          `data-prev="${pair.previous ? pair.previous.storage_path : ''}">` +
+          `📷 תצלומי מונה <span class="chev">▾</span></button>` +
+          `<div class="ph-panel"><div class="inner ph-grid" data-loaded="0">` +
+          `<div class="ph-col"><div class="ph-cap">${prevCap}</div><div class="ph-img ph-prev"></div></div>` +
+          `<div class="ph-col"><div class="ph-cap">${curCap}</div><div class="ph-img ph-cur"></div></div>` +
+          `<div class="ph-delta">Δ ${Math.round(h.kids[name].c)} קוט"ש</div></div></div>`;
+      }
       return `<div class="kline"><div class="top"><span class="nm">${name}</span><span class="amt">${total} ₪</span></div>` +
         `<div class="brk"><span>⚡ ${k.e} + 💧 ${water}</span><span>· ${Math.round(k.c)} קוט"ש</span>${tag}</div>` +
-        ly_html + `</div>`;
+        ly_html + photo_html + `</div>`;
     }
 
     // Build one period's report-card HTML. `i` is the index in state.history.
@@ -558,7 +662,7 @@
         `<div class="total">${totalHtml}<span class="cur"> ₪</span></div>` +
         `<div class="sub">💧 מים ${h.waterShare} ₪ לכל אחד · ⚡ חשמל לפי צריכה · תעריף ${h.tariff} ₪/קוט"ש</div></div>`;
 
-      const kidsHtml = names.map((n) => kidLine(h, n, ly, prevE)).join('');
+      const kidsHtml = names.map((n) => kidLine(h, n, ly, prevE, h.id, prev ? prev.id : null)).join('');
 
       const kidsForMsg = names.map((n) => ({
         name: n, consumption: h.kids[n].c, electricity: h.kids[n].e,
@@ -571,7 +675,7 @@
       let docs = '';
       if (session) {
         const mine = (state.documents || []).filter((d) => d.period_id === h.id);
-        docs = `<div class="docs">${mine.map(docLine).join('')}${uploadForm(h.id)}</div>`;
+        docs = `<div class="docs">${mine.map(docLine).join('')}${window.IS_EDITOR ? uploadForm(h.id) : ''}</div>`;
       }
 
       return `<div class="rep card">` +
@@ -845,6 +949,21 @@
         const open = btn.getAttribute('aria-expanded') === 'true';
         btn.setAttribute('aria-expanded', String(!open));
         btn.nextElementSibling.classList.toggle('open', !open);
+      }));
+      document.querySelectorAll('.rep .ph-toggle').forEach((btn) => btn.addEventListener('click', async () => {
+        const panel = btn.nextElementSibling;
+        const open = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', String(!open));
+        panel.classList.toggle('open', !open);
+        const grid = panel.querySelector('.ph-grid');
+        if (open || grid.dataset.loaded === '1') return;
+        grid.dataset.loaded = '1';
+        const curPath = btn.dataset.cur, prevPath = btn.dataset.prev;
+        if (curPath) grid.querySelector('.ph-cur').innerHTML =
+          `<img src="${await window.store.signedUrl(curPath)}" alt="מונה עכשיו" style="max-width:100%"/>`;
+        if (prevPath) grid.querySelector('.ph-prev').innerHTML =
+          `<img src="${await window.store.signedUrl(prevPath)}" alt="מונה קודם" style="max-width:100%"/>`;
+        else grid.querySelector('.ph-prev').closest('.ph-col').style.display = 'none';
       }));
       document.querySelectorAll('.rep .wa-copy').forEach((btn) => btn.addEventListener('click', async () => {
         const txt = btn.parentElement.querySelector('.wa-text').textContent;

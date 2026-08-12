@@ -4,7 +4,11 @@ function rowsToState(periods, readings, baselines, kidOrder) {
   const history = sorted.map((p) => {
     const kids = {};
     readings.filter((r) => r.period_id === p.id).forEach((r) => {
-      kids[r.kid] = { c: Number(r.consumption), e: Number(r.electricity) };
+      kids[r.kid] = {
+        c: Number(r.consumption),
+        e: Number(r.electricity),
+        reading: r.current_reading == null ? null : Number(r.current_reading),
+      };
     });
     return { id: p.id, label: p.label, date: p.reading_date, tariff: Number(p.tariff), waterTotal: Number(p.water_total), waterShare: Number(p.water_share), kids };
   });
