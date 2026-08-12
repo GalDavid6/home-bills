@@ -858,8 +858,8 @@
         `<td class="full">${fmt(row.amount)} ₪</td>` + deltaHtml + `</tr>`;
       // "עכשיו" shows the headline change vs the previous month; "חודש קודם" is then a
       // plain reference (—), and "שנה שעברה" keeps its current-vs-last-year change.
-      let rows = dataRow('עכשיו', ins.current, true, ins.previous ? delta(ins.previous) : dashCell);
-      if (ins.previous) rows += dataRow('חודש קודם', ins.previous, false, dashCell);
+      let rows = dataRow('עכשיו', ins.current, true, dashCell);
+      if (ins.previous) rows += dataRow('חודש קודם', ins.previous, false, delta(ins.previous));
       if (ins.lastYear) rows += dataRow('שנה שעברה', ins.lastYear, false, delta(ins.lastYear));
       // Price-change alert: a fixed monthly subscription that moved ≥5% vs last month.
       let alert = '';
