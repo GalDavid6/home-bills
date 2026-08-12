@@ -477,13 +477,17 @@
     }
 
     // Read-only 📎 links to every electricity-bill PDF, newest first, in the ⚡ card.
-    function elDocsHtml() {
-      const docs = (state.documents || []).filter((d) => d.kind === 'electricity_bill')
-        .sort((a, b) => (a.label < b.label ? 1 : -1));
-      if (!docs.length) return '';
-      return `<div class="docs">` + docs.map((d) =>
-        `<div class="doc">📎 <a class="el-dl" data-path="${d.storage_path}">${d.label || d.kind}</a></div>`).join('') + `</div>`;
+    // One 📎 link per period that has a bill of `kind`, newest-first, labeled by period
+    // (also de-dupes duplicate document rows for the same period from repeat uploads).
+    function billDocsHtml(kind, cls) {
+      const docs = state.documents || [];
+      const items = (state.history || []).slice().reverse().map((h) => {
+        const d = docs.find((x) => x.kind === kind && x.period_id === h.id);
+        return d ? `<div class="doc">📎 <a class="${cls}" data-path="${d.storage_path}">${d.label || kind} · ${h.label}</a></div>` : '';
+      }).filter(Boolean);
+      return items.length ? `<div class="docs">${items.join('')}</div>` : '';
     }
+    function elDocsHtml() { return billDocsHtml('electricity_bill', 'el-dl'); }
 
     function renderTrends() {
       const card = document.getElementById('trendCard');
@@ -783,13 +787,7 @@
     }
 
     // Read-only 📎 links to every water-bill PDF, newest first, in the 💧 card.
-    function waterDocsHtml() {
-      const docs = (state.documents || []).filter((d) => d.kind === 'water_bill')
-        .sort((a, b) => (a.label < b.label ? 1 : -1));
-      if (!docs.length) return '';
-      return `<div class="docs">` + docs.map((d) =>
-        `<div class="doc">📎 <a class="wa-dl" data-path="${d.storage_path}">${d.label || d.kind}</a></div>`).join('') + `</div>`;
-    }
+    function waterDocsHtml() { return billDocsHtml('water_bill', 'wa-dl'); }
 
     function renderWaterInsight() {
       const card = document.getElementById('waterInsight');
