@@ -68,10 +68,26 @@ function providerZipName(docs, provider) {
   return lo === hi ? `${provider}-${lo}.zip` : `${provider}-${lo}-${hi}.zip`;
 }
 
+// Water bills list the water + sewage tariffs as 3-decimal numbers (e.g. 11.650, 4.780) in a
+// "פירוט תעריפים" table. The Hebrew labels extract as mojibake, but the digits are clean, so we key
+// off numeric shape: water ~11–12 ₪/m³, sewage ~4–5. Returns { water, sewage } | null. A mid-period
+// rate change puts more than one distinct rate on the bill; we can't safely auto-pick (sewage fell
+// while water rose), so we return null and let the caller flag it for manual entry.
+function parseWaterTariff(rawText) {
+  // Standalone 3-decimal tokens only: the boundaries stop a match from landing inside a larger
+  // number (e.g. a thousands-grouped total like "2,881.760" must not yield a stray "881.760").
+  const nums = (String(rawText).match(/(?<![\d.,])\d{1,3}\.\d{3}(?![\d])/g) || []).map(Number);
+  const water = [...new Set(nums.filter((n) => n >= 8))];
+  const sewage = [...new Set(nums.filter((n) => n > 1 && n < 8))];
+  if (water.length !== 1 || sewage.length !== 1) return null;
+  return { water: water[0], sewage: sewage[0] };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseInvoiceTotal, providerZipName, HE_MONTHS };
+  module.exports = { parseInvoiceTotal, providerZipName, parseWaterTariff, HE_MONTHS };
 }
 if (typeof window !== 'undefined') {
   window.parseInvoiceTotal = parseInvoiceTotal;
   window.providerZipName = providerZipName;
+  window.parseWaterTariff = parseWaterTariff;
 }

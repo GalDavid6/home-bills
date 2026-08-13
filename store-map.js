@@ -10,7 +10,7 @@ function rowsToState(periods, readings, baselines, kidOrder) {
         reading: r.current_reading == null ? null : Number(r.current_reading),
       };
     });
-    return { id: p.id, label: p.label, date: p.reading_date, tariff: Number(p.tariff), waterTotal: Number(p.water_total), waterShare: Number(p.water_share), kids };
+    return { id: p.id, label: p.label, date: p.reading_date, tariff: Number(p.tariff), waterTotal: Number(p.water_total), waterShare: Number(p.water_share), waterTariff: p.water_tariff == null ? null : Number(p.water_tariff), sewageTariff: p.sewage_tariff == null ? null : Number(p.sewage_tariff), kids };
   });
   const kids = kidOrder.map((name) => {
     const b = baselines.find((x) => x.kid === name);

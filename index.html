@@ -216,6 +216,14 @@
     .rep-hero .total { font-family:'Suez One',serif; font-size:2.5rem; line-height:1.05; margin-top:2px; }
     .rep-hero .total .cur { font-size:1.4rem; opacity:.9; }
     .rep-hero .sub { font-size:.8rem; opacity:.88; margin-top:6px; }
+    .unit-cmp { margin:10px 0 2px; padding:10px 12px; background:#FBF4E9; border:1px solid var(--line); border-radius:12px; }
+    .uc-head { font-size:.74rem; color:var(--muted); font-weight:600; margin-bottom:6px; }
+    .uc-row { display:flex; align-items:center; gap:8px; font-size:.9rem; padding:3px 0; }
+    .uc-label { font-weight:600; min-width:72px; }
+    .uc-val { font-family:'Rubik',sans-serif; font-weight:700; }
+    .uc-delta { font-family:'Rubik',sans-serif; font-weight:700; font-size:.85rem; margin-inline-start:auto; white-space:nowrap; }
+    .uc-delta.up { color:var(--up); } .uc-delta.down { color:var(--down); } .uc-delta.zero { color:var(--muted); }
+    .uc-prev { color:var(--muted); font-size:.78rem; white-space:nowrap; }
     .kline { background:#FFFDFA; border:1px solid var(--line); border-radius:13px; padding:11px 14px; margin-bottom:9px;
              box-shadow:0 2px 0 #F3E7D3; }
     .kline .top { display:flex; justify-content:space-between; align-items:baseline; }
@@ -368,6 +376,7 @@
   <script src="calc.js"></script>
   <script src="format.js"></script>
   <script src="history.js"></script>
+  <script src="unit-price.js"></script>
   <script src="meter-photos.js"></script>
   <script src="validate.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -728,6 +737,7 @@
         `<div class="rep-hero"><div class="cap">סה"כ להעברה</div>` +
         `<div class="total">${totalHtml}<span class="cur"> ₪</span></div>` +
         `<div class="sub">💧 מים ${h.waterShare} ₪ לכל אחד · ⚡ חשמל לפי צריכה · תעריף ${h.tariff} ₪/קוט"ש</div></div>`;
+      const unitCmp = window.unitPriceBlockHtml(h, prev);
 
       const kidsHtml = names.map((n) => kidLine(h, n, ly, prevE, h.id, prev ? prev.id : null)).join('');
 
@@ -751,7 +761,7 @@
           (isNewest ? `<button id="logoutBtn" title="התנתק" class="secondary logout-icon">🚪</button>` : '') +
           `</span></div>` +
           `<div class="chips">${chips}</div></div>` +
-        hero + kidsHtml +
+        hero + unitCmp + kidsHtml +
         `<pre class="wa-text" hidden>${msg}</pre>` +
         docs + `</div>`;
     }
