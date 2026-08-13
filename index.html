@@ -248,8 +248,8 @@
     .ph-delta { flex-basis:100%; text-align:center; font-weight:600; margin-top:6px; }
     .rep-top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
     .rep-actions { display:inline-flex; align-items:center; gap:8px; }
-    .logout-icon { width:auto; padding:4px 8px; font-size:1rem; line-height:1; }
-    .rep .wa-copy-sm { width:auto; padding:5px 12px; font-size:.8rem; margin-top:0; white-space:nowrap; }
+    .logout-icon { width:auto; padding:4px 8px; font-size:1rem; line-height:1; margin-top:0; }
+    .rep .wa-copy-sm { width:auto; padding:4px 8px; font-size:1rem; line-height:1; margin-top:0; }
 
     #otherBills .prov-block { margin-top: 18px; }
     #otherBills .prov-block:first-of-type { margin-top: 6px; }
@@ -747,7 +747,7 @@
         `<div class="rep-head">` +
           `<div class="rep-top"><span class="rep-label">${h.label}</span>` +
           `<span class="rep-actions">` +
-          `<button class="secondary wa-copy wa-copy-sm">📋 העתק ל-WhatsApp</button>` +
+          `<button class="secondary wa-copy wa-copy-sm" title="העתק ל-WhatsApp">💬</button>` +
           (isNewest ? `<button id="logoutBtn" title="התנתק" class="secondary logout-icon">🚪</button>` : '') +
           `</span></div>` +
           `<div class="chips">${chips}</div></div>` +
