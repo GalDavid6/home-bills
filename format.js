@@ -2,7 +2,7 @@
 // without the site URL and the viewer-password hint.
 function formatMessage(r, opts) {
   const lines = [];
-  lines.push(`🏠 חשבונות בית — ${r.period}`);
+  lines.push(`🏠 חשבונות בית · ${r.period}`);
   lines.push('');
   lines.push(`💧 מים: ${r.waterTotal} ₪ ÷ 4 = ${r.waterShare} ₪ לכל אחד`);
   lines.push('');
