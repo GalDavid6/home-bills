@@ -1,5 +1,5 @@
-// Owner tools for the active cycle: status card, per-kid manual entry, link issue/revoke,
-// WhatsApp reminder/report and approve. A classic script (UMD, like calc.js) so the pure
+// Owner tools for the active cycle: status card, per-kid manual entry, the family link
+// (copy / replace), WhatsApp reminder/report, manual open, tariff/water/bills and approve. A classic script (UMD, like calc.js) so the pure
 // helpers below are unit-tested in Node; the ESM rules (rules.mjs) and the photo downscaler
 // (family-page.js) are loaded with dynamic import() only when the card runs in the browser.
 (function () {
@@ -8,8 +8,7 @@
   const TZ = 'Asia/Jerusalem';
   const REMINDER_HEAD = 'היי 👋 הגיע הזמן לצלם את המונים לחשבון החשמל.';
   const MSG_REPLACE = 'ליצור קישור חדש? הקישור הקודם יפסיק לעבוד';
-  const MSG_REPLACE_ALL = 'ליצור קישורים חדשים לשלושת הילדים? הקישורים הקודמים יפסיקו לעבוד';
-  const MSG_REVOKE = 'לבטל את הקישור? הוא יפסיק לעבוד';
+  const MSG_OPEN_CYCLE = 'לפתוח מחזור חדש ידנית?';
   const MSG_APPROVE = 'לאשר ולפרסם את המחזור? המשפחה תראה את הדוח';
   const MSG_OVERRIDE = 'בדקתי, לשמור';
   const MSG_BAD_READING = 'נא להזין מספר בלבד';
@@ -22,18 +21,34 @@
     return 'https://wa.me/?text=' + encodeURIComponent(text);
   }
 
-  function linkUrl(kind, token) {
-    return SITE + (kind === 'report' ? '#r=' : '#m=') + token;
+  // The one permanent family link: the report to view, plus the meter update while a cycle is open.
+  function familyUrl(token) {
+    return SITE + '#f=' + token;
   }
 
-  // links: [{ kid, url }] in kid order.
-  function reminderText(links) {
-    return [REMINDER_HEAD].concat(links.map((l) => `${l.kid}: ${l.url}`)).join('\n');
+  function reminderText(url) {
+    return `${REMINDER_HEAD}\nלעדכון: ${url}`;
   }
 
-  // Link mode drops the site URL and the viewer-password lines: the family gets only the report link.
-  function reportText(results, reportUrl, formatMessage) {
-    return formatMessage(results, { linkMode: true }) + `\n\nלצפייה בדוח: ${reportUrl}`;
+  // Link mode drops the site URL and the viewer-password lines: the family gets only its link.
+  function reportText(results, url, formatMessage) {
+    return formatMessage(results, { linkMode: true }) + `\n\nלצפייה בדוח: ${url}`;
+  }
+
+  // For display only: the card shows the start of the token, the copy button the whole link.
+  function shortLink(url) {
+    const m = /^(.*#f=)(.*)$/.exec(url || '');
+    if (!m || m[2].length <= 8) return url || '';
+    return m[1] + m[2].slice(0, 6) + '…';
+  }
+
+  // Tariff or water total as the owner types it: digits, optional comma/dot and up to 4 decimals, above 0.
+  function parseAmount(text) {
+    if (typeof text !== 'string') return null;
+    const m = /^(\d+)(?:[.,](\d{1,4}))?$/.exec(text.trim());
+    if (!m) return null;
+    const n = Number(m[2] === undefined ? m[1] : `${m[1]}.${m[2]}`);
+    return n > 0 ? n : null;
   }
 
   function round2(n) {
@@ -223,8 +238,8 @@
     }
   }
 
-  // ctx: { state, links, store, reload(), out? }. reload() refetches state + links,
-  // updates ctx.state/ctx.links and re-renders this card (and the rest of the page).
+  // ctx: { state, familyToken, store, reload(), out? }. reload() refetches state and the
+  // stored family token, updates ctx and re-renders this card (and the rest of the page).
   async function renderOwnerCard(host, ctx) {
     const rules = await loadRules();
     const { store } = ctx;
@@ -234,23 +249,8 @@
     if (!ctx.out) ctx.out = el('div', { class: 'own-out', id: 'ownOut' });
     const out = ctx.out;
     const rerender = () => renderOwnerCard(host, ctx);
-    const hasLink = (kind, kid) => (ctx.links || []).some((l) => l.kind === kind && (l.kid || null) === (kid || null));
-    const markLink = (kind, kid, on) => {
-      ctx.links = (ctx.links || []).filter((l) => !(l.kind === kind && (l.kid || null) === (kid || null)));
-      if (on) ctx.links.push({ kind, kid: kid || null });
-    };
     const errMsg = (e) => (e && e.message) || String(e);
     const showErr = (text) => out.replaceChildren(el('div', { class: 'msg err', id: 'ownErr' }, text));
-
-    function showLink(title, url) {
-      const input = el('input', { id: 'ownLinkUrl', readonly: true, value: url, dir: 'ltr' });
-      const copy = el('button', { class: 'secondary own-sm', id: 'ownLinkCopy' }, 'העתק');
-      copy.addEventListener('click', async () => {
-        try { await navigator.clipboard.writeText(url); copy.textContent = 'הועתק ✓'; }
-        catch (e) { input.select(); }
-      });
-      out.replaceChildren(el('div', { class: 'own-linkbox' }, el('div', { class: 'own-title' }, title), input, copy));
-    }
 
     function showWa(text) {
       const url = whatsappUrl(text);
@@ -262,37 +262,95 @@
       try { window.open(url, '_blank'); } catch (e) { /* the button stays */ }
     }
 
-    // One button per link: links are stored as hashes only, so "copy" always means a new link.
-    // Copies right away; the link is also shown once with a copy button in case the clipboard
-    // is refused (common after the async issue on phones).
-    async function issue(kind, kid) {
-      if (hasLink(kind, kid) && !window.confirm(MSG_REPLACE)) return;
-      try {
-        const token = await store.issueLink(kind, kid);
-        markLink(kind, kid, true);
-        const url = linkUrl(kind, token);
-        rerender();
-        showLink(kind === 'report' ? 'קישור לדוח' : `הקישור של ${kid}`, url);
-        try { await navigator.clipboard.writeText(url); document.getElementById('ownLinkCopy').textContent = 'הועתק ✓'; }
-        catch (e) { /* the copy button stays */ }
-      } catch (e) { showErr('יצירת הקישור נכשלה: ' + errMsg(e)); }
+    async function copyText(text) {
+      try { await navigator.clipboard.writeText(text); return true; } catch (e) { return false; }
     }
 
-    async function revoke(kind, kid) {
-      if (!window.confirm(MSG_REVOKE)) return;
-      try {
-        await store.revokeLink(kind, kid);
-        markLink(kind, kid, false);
-        out.replaceChildren();
-        rerender();
-      } catch (e) { showErr('ביטול הקישור נכשל: ' + errMsg(e)); }
+    // The stored family link (issued on first use). The same link every time, so Gal can
+    // pin it in the family group; replace only under "advanced" when it leaked.
+    let famShown = null; // the link line in the family section, kept in step with ctx.familyToken
+    async function familyLink() {
+      const token = await store.getFamilyLink();
+      ctx.familyToken = token;
+      const u = familyUrl(token);
+      if (famShown) famShown.textContent = shortLink(u);
+      return u;
     }
 
-    function linkButtons(kind, kid) {
-      return [
-        el('button', { class: 'secondary own-sm own-link', onclick: () => issue(kind, kid) }, 'קישור'),
-        hasLink(kind, kid) ? el('button', { class: 'secondary own-sm own-revoke', onclick: () => revoke(kind, kid) }, 'בטל קישור') : null,
-      ];
+    function familySection() {
+      const url = ctx.familyToken ? familyUrl(ctx.familyToken) : null;
+      const shown = el('div', { class: 'own-famurl', id: 'ownFamUrl', dir: 'ltr' }, url ? shortLink(url) : 'עוד אין קישור');
+      famShown = shown;
+      const copy = el('button', { class: 'secondary own-sm', id: 'ownFamCopy' }, 'העתק');
+      copy.addEventListener('click', async () => {
+        try {
+          const u = await familyLink();
+          // The clipboard can refuse after the network wait (phones); then the link is shown whole to copy by hand.
+          if (await copyText(u)) copy.textContent = 'הועתק ✓';
+          else out.replaceChildren(el('input', { id: 'ownLinkUrl', readonly: true, value: u, dir: 'ltr' }));
+        } catch (e) { showErr('הקישור לא נטען: ' + errMsg(e)); }
+      });
+      const replace = el('button', { class: 'secondary own-sm', id: 'ownFamReplace' }, 'החלף קישור');
+      replace.addEventListener('click', async () => {
+        if (!window.confirm(MSG_REPLACE)) return;
+        try {
+          ctx.familyToken = await store.replaceFamilyLink();
+          const u = familyUrl(ctx.familyToken);
+          shown.textContent = shortLink(u);
+          out.replaceChildren(el('input', { id: 'ownLinkUrl', readonly: true, value: u, dir: 'ltr' }));
+          if (await copyText(u)) replace.textContent = 'הוחלף והועתק ✓';
+        } catch (e) { showErr('החלפת הקישור נכשלה: ' + errMsg(e)); }
+      });
+      return el('div', { class: 'own-kid own-family', id: 'ownFamily' },
+        el('div', { class: 'own-top' }, el('span', { class: 'own-name' }, 'קישור משפחתי')),
+        el('div', { class: 'own-btns' }, shown, copy),
+        el('details', { class: 'own-adv', id: 'ownAdvanced' }, el('summary', {}, 'מתקדם'),
+          el('div', { class: 'hint' }, 'אם הקישור דלף: קישור חדש, והקודם יפסיק לעבוד.'), replace));
+    }
+
+    // Tariff, water total and the two bills of the active cycle (needed before approve).
+    function cycleBills() {
+      const p = active.period;
+      const tariff = el('input', { id: 'ownTariff', type: 'text', inputmode: 'decimal', dir: 'ltr', value: p.tariff == null ? '' : String(p.tariff) });
+      const water = el('input', { id: 'ownWater', type: 'text', inputmode: 'decimal', dir: 'ltr', value: p.water_total == null ? '' : String(p.water_total) });
+      const msg = el('div', { class: 'own-msg', id: 'ownAmountsMsg' });
+      const save = el('button', { class: 'secondary own-sm', id: 'ownAmountsSave' }, 'שמור סכומים');
+      save.addEventListener('click', async () => {
+        const read = (input) => (input.value.trim() === '' ? null : parseAmount(input.value));
+        const t = read(tariff);
+        const w = read(water);
+        if ((tariff.value.trim() && t == null) || (water.value.trim() && w == null)) {
+          msg.replaceChildren(el('div', { class: 'msg err' }, MSG_BAD_READING));
+          return;
+        }
+        save.disabled = true;
+        try {
+          await store.saveCycleAmounts(model.id, { tariff: t, waterTotal: w });
+          await ctx.reload();
+        } catch (e) {
+          save.disabled = false;
+          msg.replaceChildren(el('div', { class: 'msg err' }, 'שמירה נכשלה: ' + errMsg(e)));
+        }
+      });
+      const upload = (kind, label, done) => {
+        const file = el('input', { type: 'file', class: 'own-billfile', id: kind === 'water_bill' ? 'ownWaterFile' : 'ownElecFile', accept: 'application/pdf,image/*' });
+        file.addEventListener('change', async () => {
+          if (!file.files || !file.files[0]) return;
+          msg.replaceChildren(el('div', { class: 'hint' }, 'מעלה...'));
+          try {
+            await store.uploadCycleBill(model.id, kind, file.files[0]);
+            await ctx.reload();
+          } catch (e) { msg.replaceChildren(el('div', { class: 'msg err' }, 'העלאה נכשלה: ' + errMsg(e))); }
+        });
+        return el('label', { class: 'own-billrow' }, `${label} ${done ? '✅' : '⏳'} (${done ? 'להחליף' : 'להעלות'})`, file);
+      };
+      return el('div', { class: 'own-cyclebills', id: 'ownCycleBills' },
+        el('label', { for: 'ownTariff' }, 'תעריף לקוט"ש (₪)'), tariff,
+        el('label', { for: 'ownWater' }, 'סכום חשבון מים (₪)'), water,
+        save,
+        upload('electricity_bill', 'חשבון חשמל', model.bills.electricity),
+        upload('water_bill', 'חשבון מים', model.bills.water),
+        msg);
     }
 
     function entryForm(k) {
@@ -366,13 +424,11 @@
         form ? el('button', {
           class: 'secondary own-sm own-edit',
           onclick: () => { form.hidden = !form.hidden; if (!form.hidden) form.querySelector('.own-reading').focus(); },
-        }, k.done ? '✏️ תיקון' : '✏️ הזנה') : null,
-        ...linkButtons('meter', kid));
+        }, k.done ? '✏️ תיקון' : '✏️ הזנה') : null);
       return el('div', { class: 'own-kid', 'data-kid': kid },
         el('div', { class: 'own-top' },
           el('span', { class: 'own-name' }, kid),
           stateText ? el('span', { class: 'own-state' }, stateText) : null),
-        el('div', { class: 'own-linkstate' }, hasLink('meter', kid) ? '🔗 קישור פעיל' : 'אין קישור פעיל'),
         btns, form);
     }
 
@@ -381,9 +437,7 @@
       try {
         const results = reportResults(ctx.state.history, window.compareCycle);
         if (!results) throw new Error('אין עדיין מחזור שפורסם');
-        const token = await store.issueLink('report', null);
-        markLink('report', null, true);
-        showWa(reportText(results, linkUrl('report', token), window.formatMessage));
+        showWa(reportText(results, await familyLink(), window.formatMessage));
       } catch (e) {
         if (rethrow) throw e;
         showErr('שליחת הדוח נכשלה: ' + errMsg(e));
@@ -395,7 +449,7 @@
       el('h2', {}, model ? `🗂️ מחזור נוכחי · ${model.label}` : '🗂️ מחזור נוכחי'),
       el('div', { class: 'own-status', id: 'ownStatus' }, model ? `סטטוס: ${model.statusText}` : 'אין מחזור פתוח כרגע')));
 
-    KIDS.forEach((kid) => children.push(kidRow(kid)));
+    if (model) KIDS.forEach((kid) => children.push(kidRow(kid)));
 
     if (model) {
       const notes = [];
@@ -406,27 +460,16 @@
         + (notes.length ? ' · ' + notes.join(' · ') : '')));
     }
 
-    children.push(el('div', { class: 'own-kid', 'data-kid': 'report' },
-      el('div', { class: 'own-top' }, el('span', { class: 'own-name' }, 'קישור לדוח')),
-      el('div', { class: 'own-linkstate' }, hasLink('report', null) ? '🔗 קישור פעיל' : 'אין קישור פעיל'),
-      el('div', { class: 'own-btns' }, ...linkButtons('report', null))));
+    if (model && model.status !== 'published') children.push(cycleBills());
+    children.push(familySection());
 
     const actions = el('div', { class: 'own-actions' });
     if (model && model.status === 'open') {
       actions.append(el('button', {
         class: 'secondary', id: 'ownRemind',
         onclick: async () => {
-          if (KIDS.some((k) => hasLink('meter', k)) && !window.confirm(MSG_REPLACE_ALL)) return;
-          try {
-            const links = [];
-            for (const kid of KIDS) {
-              const token = await store.issueLink('meter', kid);
-              markLink('meter', kid, true);
-              links.push({ kid, url: linkUrl('meter', token) });
-            }
-            rerender();
-            showWa(reminderText(links));
-          } catch (e) { showErr('יצירת הקישורים נכשלה, נסו שוב: ' + errMsg(e)); }
+          try { showWa(reminderText(await familyLink())); }
+          catch (e) { showErr('הקישור לא נטען, נסו שוב: ' + errMsg(e)); }
         },
       }, '📣 שלח תזכורת'));
     }
@@ -438,7 +481,6 @@
       const approve = el('button', { id: 'ownApprove', disabled: !model.canApprove }, '✅ אשר ושלח');
       approve.addEventListener('click', async () => {
         if (!window.confirm(MSG_APPROVE)) return;
-        if (hasLink('report', null) && !window.confirm(MSG_REPLACE)) return;
         approve.disabled = true;
         approve.textContent = 'מפרסם...';
         try {
@@ -464,15 +506,28 @@
     }
     actions.append(el('button', {
       class: 'secondary', id: 'ownReport',
-      onclick: () => { if (hasLink('report', null) && !window.confirm(MSG_REPLACE)) return; sendReport(); },
+      onclick: () => sendReport(),
     }, '📤 שלח דוח אחרון'));
+    if (!active) {
+      // The IEC bill did not arrive (or could not be read): Gal opens the cycle himself.
+      actions.append(el('button', {
+        class: 'secondary', id: 'ownOpenCycle',
+        onclick: async () => {
+          if (!window.confirm(MSG_OPEN_CYCLE)) return;
+          try {
+            await store.openCycleManually(israelDate(new Date().toISOString()));
+            await ctx.reload();
+          } catch (e) { showErr('פתיחת המחזור נכשלה: ' + errMsg(e)); }
+        },
+      }, '🆕 פתח מחזור'));
+    }
     children.push(actions, out);
 
     host.replaceChildren(el('div', { class: 'card', id: 'ownerCard' }, ...children));
   }
 
   const api = {
-    whatsappUrl, linkUrl, reminderText, reportText, planPublish, previousByKid, statusModel, reportResults,
+    whatsappUrl, familyUrl, reminderText, reportText, shortLink, parseAmount, planPublish, previousByKid, statusModel, reportResults,
     defaultReadingDate, fmtSubmittedAt, kidValidationInput, renderOwnerCard,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

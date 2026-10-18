@@ -1,7 +1,9 @@
-// Family meter page (#m=<token>): one kid submits a meter photo + reading.
-// Module: loaded by index.html, it takes over the page only when the hash is #m=...
+// Family meter flow. Two entry points, both loaded by index.html:
+//   #m=<token>  (older per-kid link): one kid submits a meter photo + reading.
+//   #f=<token>  (the one family link): index.html renders the report; this module adds the
+//               "new cycle open" card on top, the kid chooser and the same single-kid flow.
 // The token lives in memory only (never storage, never a URL query, never logged).
-import { parseReadingInput, validateReading, checkPhoto } from './rules.mjs';
+import { parseReadingInput, validateReading, checkPhoto, familyUpdateCard } from './rules.mjs';
 
 const MSG_UNAUTHORIZED = 'הקישור אינו בתוקף';
 const MSG_NETWORK = 'אין חיבור, נסו שוב';
@@ -56,10 +58,15 @@ function el(tag, props = {}, ...kids) {
   return n;
 }
 
-export function startFamilyPage(token) {
+// family: true for the #f= link. The page then starts on the report (view 'home').
+export function startFamilyPage(token, { family = false } = {}) {
   const root = document.getElementById('familyView');
-  root.style.display = 'block';
-  let ctx = null;
+  const homeHost = family ? document.getElementById('famUpdateHost') : null;
+  if (!family) root.style.display = 'block';
+  let ctx = null; // the single kid's context (#m=, or the kid chosen on the family link)
+  let fam = null; // the family context { family, cycle, kids }
+  let view = family ? 'home' : 'kid';
+  let thanks = null; // chooser notice after a save
   let blob = null;
   let previewUrl = null;
   let pendingWarn = null;
@@ -90,20 +97,83 @@ export function startFamilyPage(token) {
     return el('div', { class: `fam-note ${cls}`, role: 'alert' }, text);
   }
 
+  // Family link: switches between the report (home) and the update screens.
+  function show(next) {
+    view = next;
+    const home = view === 'home';
+    document.getElementById('homeView').style.display = home ? 'block' : 'none';
+    document.getElementById('archiveView').style.display = 'none';
+    root.style.display = home ? 'none' : 'block';
+    window.scrollTo(0, 0);
+    render();
+  }
+
+  function kidCtx(kid) {
+    const k = fam.kids.find((x) => x.kid === kid);
+    return { ...k, cycle: fam.cycle };
+  }
+
+  function renderHome() {
+    const model = familyUpdateCard(fam);
+    if (!model) return homeHost.replaceChildren();
+    return homeHost.replaceChildren(el('div', { class: 'card fam-card fam-update', id: 'famUpdateCard' },
+      el('h2', { id: 'famOpenTitle' }, 'מחזור חדש פתוח'),
+      el('p', { class: 'fam-big', id: 'famRemaining' }, model.line),
+      el('button', { class: 'fam-btn', id: 'famUpdateBtn', type: 'button', onclick: () => { thanks = null; show('chooser'); } },
+        'עדכון מונה')));
+  }
+
+  function renderChooser() {
+    const kids = [el('h2', { id: 'famChooserTitle' }, 'את המונה של מי מעדכנים?')];
+    if (fam.cycle) kids.push(el('div', { class: 'fam-muted', id: 'famCycle' }, fam.cycle.label));
+    if (thanks) kids.push(notice(thanks, 'fam-okbox'));
+    const open = fam.cycle && fam.cycle.status === 'open';
+    if (!fam.cycle) kids.push(el('p', { class: 'fam-big', id: 'famNoCycle' }, 'אין צורך בקריאה כרגע'));
+    else if (!open) kids.push(el('p', { class: 'fam-big fam-ok', id: 'famAllIn' }, 'כל הקריאות התקבלו, תודה!'));
+    fam.kids.forEach((k) => {
+      const row = el('button', {
+        class: 'fam-kid', type: 'button', 'data-kid': k.kid,
+        onclick: () => { ctx = kidCtx(k.kid); replacing = false; saved = null; resetForm(); form.draft = ''; show('kid'); },
+      },
+      el('span', { class: 'fam-kid-name' }, k.kid),
+      el('span', { class: 'fam-kid-prev' }, `קריאה קודמת ${k.previous}`),
+      k.submitted ? el('span', { class: 'fam-kid-done' }, '✅ עודכן') : '');
+      if (!open) row.disabled = true;
+      kids.push(row);
+    });
+    kids.push(el('button', { class: 'secondary fam-btn', id: 'famBackHome', type: 'button', onclick: () => show('home') }, 'חזרה לדוח'));
+    return setView(card(...kids));
+  }
+
+  function backToChooser() {
+    return el('button', {
+      class: 'secondary fam-btn', id: 'famBackChooser', type: 'button',
+      onclick: () => { resetForm(); thanks = null; reloadFamily().then(() => show('chooser')); },
+    }, 'לבחור מישהו אחר');
+  }
+
   function render() {
+    if (family && fam === 'invalid') {
+      if (view === 'home') return homeHost.replaceChildren();
+      return setView(card(el('h2', {}, MSG_UNAUTHORIZED)));
+    }
+    if (family && view === 'home') return fam ? renderHome() : undefined;
+    if (family && view === 'chooser') return renderChooser();
     if (ctx === 'invalid') {
       return setView(card(el('h2', {}, MSG_UNAUTHORIZED)));
     }
     if (!ctx) return setView(card(el('p', { class: 'fam-muted' }, 'טוען...')));
+    const title = family ? `מעדכנים את המונה של ${ctx.kid}` : `שלום ${ctx.kid}`;
+    const back = family ? backToChooser() : '';
     if (ctx.closed) {
-      return setView(card(el('h2', { id: 'famGreeting' }, `שלום ${ctx.kid}`),
-        el('p', { class: 'fam-big', id: 'famClosed' }, ctx.closed)));
+      return setView(card(el('h2', { id: 'famGreeting' }, title),
+        el('p', { class: 'fam-big', id: 'famClosed' }, ctx.closed), back));
     }
     const head = el('div', { class: 'fam-head' },
-      el('h2', { id: 'famGreeting' }, `שלום ${ctx.kid}`),
+      el('h2', { id: 'famGreeting' }, title),
       ctx.cycle ? el('div', { class: 'fam-muted', id: 'famCycle' }, ctx.cycle.label) : '');
     if (!ctx.cycle) {
-      return setView(card(head, el('p', { class: 'fam-big', id: 'famNoCycle' }, 'אין צורך בקריאה כרגע')));
+      return setView(card(head, el('p', { class: 'fam-big', id: 'famNoCycle' }, 'אין צורך בקריאה כרגע'), back));
     }
     if (saved) {
       return setView(card(head,
@@ -113,13 +183,13 @@ export function startFamilyPage(token) {
     }
     if (ctx.submitted && !replacing) {
       const kids = [head,
-        el('p', { class: 'fam-muted' }, 'הקריאה שלך כבר נשלחה'),
+        el('p', { class: 'fam-muted' }, family ? 'הקריאה כבר נשלחה' : 'הקריאה שלך כבר נשלחה'),
         el('p', { class: 'fam-num', id: 'famSubmittedNum' }, String(ctx.submitted.reading))];
       if (ctx.submitted.photoUrl) kids.push(el('img', { class: 'fam-photo', src: ctx.submitted.photoUrl, alt: '' }));
-      kids.push(replaceButton());
+      kids.push(replaceButton(), back);
       return setView(card(...kids));
     }
-    return setView(card(head, form()));
+    return setView(card(head, form(), back));
   }
 
   function replaceButton() {
@@ -221,6 +291,7 @@ export function startFamilyPage(token) {
     const fd = new FormData();
     fd.append('photo', blob, 'meter.jpg');
     fd.append('reading', String(reading));
+    if (family) fd.append('kid', ctx.kid);
     if (confirmed) fd.append('confirm', '1');
     let res;
     try {
@@ -232,7 +303,15 @@ export function startFamilyPage(token) {
     }
     busy = false;
     const msg = (res.body && res.body.error) || MSG_NETWORK;
-    if (res.status === 200 && res.body && res.body.saved) {
+    if (res.status === 200 && res.body && res.body.saved && family) {
+      // Back to the chooser with the new ✅ (the home card is rebuilt from the same fetch).
+      const kid = ctx.kid;
+      resetForm();
+      form.draft = '';
+      await reloadFamily();
+      thanks = `תודה! הקריאה של ${kid} נשמרה`;
+      return show('chooser');
+    } else if (res.status === 200 && res.body && res.body.saved) {
       saved = { reading: res.body.saved.reading };
       replacing = false;
       resetForm();
@@ -250,6 +329,23 @@ export function startFamilyPage(token) {
     render();
   }
 
+  // Family link: refetch the three kids' state (after a save, or when going back).
+  async function reloadFamily() {
+    try {
+      const res = await api('meter');
+      if (res.status === 200 && res.body && res.body.family) fam = res.body;
+      else if (res.status === 401) fam = 'invalid';
+    } catch { /* keep the last known state; the next action reports the network */ }
+    if (family && view === 'home') render();
+  }
+
+  if (family) {
+    // The report itself is rendered by index.html; without a usable family context the
+    // page simply has no update card.
+    reloadFamily();
+    return;
+  }
+
   render();
   api('meter').then((res) => {
     if (res.status === 200 && res.body) { ctx = res.body; }
@@ -259,8 +355,14 @@ export function startFamilyPage(token) {
   }).catch(() => setView(card(el('p', { class: 'fam-err' }, MSG_NETWORK))));
 }
 
-const m = /^#m=([^&/]*)/.exec(location.hash);
-if (m && document.getElementById('familyView')) {
+const f = /^#f=([^&/]*)/.exec(location.hash);
+const m = f ? null : /^#m=([^&/]*)/.exec(location.hash);
+if (f && document.getElementById('famUpdateHost')) {
+  // An empty or malformed token gets the invalid-link card from index.html's report boot.
+  let token = '';
+  try { token = decodeURIComponent(f[1]); } catch { /* malformed escape */ }
+  if (token) startFamilyPage(token, { family: true });
+} else if (m && document.getElementById('familyView')) {
   let token = '';
   try { token = decodeURIComponent(m[1]); } catch { /* malformed escape: treated as an invalid link */ }
   if (token) {

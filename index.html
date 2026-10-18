@@ -285,6 +285,17 @@
     .fam-err { color:var(--up); background:#FBE9E4; }
     .fam-warn { color:#7A5200; background:#FCF0D6; }
     .fam-actions { display:flex; gap:10px; }
+    /* Family link (#f=): update card on top of the report, kid chooser */
+    .fam-update { border:2px solid var(--terra); }
+    .fam-update h2 { font-size:1.4rem; margin-bottom:0; }
+    .fam-kid { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 10px; width:100%;
+      min-height:72px; margin-top:12px; padding:12px 16px; text-align:right; background:#FFFDFA; color:inherit;
+      border:1.5px solid var(--line); border-radius:16px; }
+    .fam-kid[disabled] { opacity:.7; cursor:default; }
+    .fam-kid-name { font-family:'Rubik',sans-serif; font-size:1.35rem; font-weight:600; }
+    .fam-kid-prev { color:var(--muted); font-weight:600; font-size:.95rem; direction:rtl; }
+    .fam-kid-done { flex-basis:100%; color:var(--sage); font-weight:700; }
+    .fam-okbox { color:var(--sage); background:#E9F3EA; }
     /* Owner cycle card (#owner, signed in as the owner) */
     .report-mode #ownerHost { display:none !important; }
     #ownerCard .own-head h2 { margin-bottom:2px; }
@@ -293,7 +304,12 @@
     #ownerCard .own-top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; }
     #ownerCard .own-name { font-family:'Rubik',sans-serif; font-weight:600; font-size:1.05rem; }
     #ownerCard .own-state { font-size:.9rem; font-weight:600; }
-    #ownerCard .own-linkstate { font-size:.78rem; color:var(--muted); margin-top:2px; }
+    #ownerCard .own-famurl { flex:1 1 180px; align-self:center; font-size:.82rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #ownerCard .own-adv { margin-top:8px; font-size:.88rem; }
+    #ownerCard .own-adv summary { cursor:pointer; color:var(--muted); font-weight:600; }
+    #ownerCard .own-cyclebills { border-top:1px dashed var(--line); margin-top:8px; padding-top:6px; }
+    #ownerCard .own-billrow { display:block; margin-top:8px; font-weight:600; }
+    #ownerCard .own-billrow input { display:block; margin-top:4px; font-weight:400; }
     #ownerCard .own-btns { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
     #ownerCard .own-sm { width:auto; padding:6px 11px; font-size:.84rem; margin:0; }
     #ownerCard .own-form { margin-top:6px; padding:8px 10px; background:#FFF8EC; border:1px dashed var(--line); border-radius:12px; }
@@ -355,6 +371,7 @@
   </div>
 
   <div id="homeView">
+    <div id="famUpdateHost"></div>
     <div id="ownerHost"></div>
     <div class="card" id="inputCard">
       <label>תקופה</label>
@@ -425,7 +442,9 @@
   </div>
 
   <script>
-    if (/^#m=/.test(location.hash)) { window.__familyMode = true; document.documentElement.classList.add('family-mode'); }
+    // #f= (the one family link) = the report-link view plus the meter update card (family-page.js).
+    if (/^#f=/.test(location.hash)) { window.__reportMode = true; window.__familyLink = true; document.documentElement.classList.add('report-mode'); }
+    else if (/^#m=/.test(location.hash)) { window.__familyMode = true; document.documentElement.classList.add('family-mode'); }
     else if (/^#r=/.test(location.hash)) { window.__reportMode = true; document.documentElement.classList.add('report-mode'); }
     else if (location.hash === '#owner') { window.__ownerRoute = true; }
   </script>
@@ -464,10 +483,11 @@
     }
     window.addEventListener('hashchange', applyView);
 
-    // Report link (#r=<token>): read-only report from the family function. No Supabase client, no auth UI.
+    // Report link (#r=<token>) and family link (#f=<token>): read-only report from the family
+    // function. No Supabase client, no auth UI. The family link's update card is family-page.js.
     async function bootReport() {
       let token = '';
-      try { token = decodeURIComponent(/^#r=([^&/]*)/.exec(location.hash)[1]); } catch { /* malformed */ }
+      try { token = decodeURIComponent(/^#[fr]=([^&/]*)/.exec(location.hash)[1]); } catch { /* malformed */ }
       const invalid = () => {
         document.getElementById('homeView').style.display = 'none';
         const fv = document.getElementById('familyView');
@@ -708,7 +728,7 @@
       try {
         if (!ownerCtx) {
           ownerCtx = { store: window.store, reload: refreshAll };
-          ownerCtx.links = await window.store.listActiveLinks();
+          ownerCtx.familyToken = await window.store.readFamilyLink();
         }
         ownerCtx.state = state;
         await window.ownerCycle.renderOwnerCard(host, ownerCtx);
@@ -724,7 +744,7 @@
     async function refreshAll() {
       state = await window.store.loadState();
       state.documents = await window.store.listDocuments();
-      if (ownerCtx) ownerCtx.links = await window.store.listActiveLinks();
+      if (ownerCtx) ownerCtx.familyToken = await window.store.readFamilyLink();
       renderKidInputs();
       renderTrends();
       renderPeriods();

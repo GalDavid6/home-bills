@@ -60,3 +60,17 @@ export function checkPhoto({ type, size }) {
   const ok = typeof type === 'string' && type.startsWith('image/') && size <= MAX_PHOTO_BYTES;
   return ok ? null : MSG_PHOTO;
 }
+
+// The kid named by a family-link request: exactly one of the three names, else null.
+export function familyKid(value) {
+  return typeof value === 'string' && KIDS.includes(value) ? value : null;
+}
+
+// The family link's home card: shown only while the cycle is 'open'. ctx is the family
+// meter context { cycle, kids: [{ kid, submitted }] }.
+export function familyUpdateCard(ctx) {
+  if (!ctx || !ctx.cycle || ctx.cycle.status !== 'open') return null;
+  const done = new Set((ctx.kids || []).filter((k) => k.submitted).map((k) => k.kid));
+  const remaining = KIDS.filter((k) => !done.has(k));
+  return { remaining, line: remaining.length ? `נשאר: ${remaining.join(', ')}` : 'כולם עדכנו' };
+}

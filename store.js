@@ -155,39 +155,83 @@ const KID_SLUGS = { 'ירין': 'yarin', 'גל': 'gal', 'ניב': 'niv' };
 const PHOTO_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' };
 const roundCents = (n) => Math.round(n * 100) / 100;
 
-function linkScope(kind, kid) {
-  if (kind === 'meter' && KID_ORDER.includes(kid)) return kid;
-  if (kind === 'report' && kid == null) return null;
-  throw new Error('bad link kind/kid');
-}
-
-// Active links only (kind, kid); the tokens themselves are never stored.
-async function listActiveLinks() {
-  const { data, error } = await _sb.from('access_links').select('kind, kid, created_at').eq('active', true);
+// The one permanent family link (#f=). Unlike the retired per-kid links its token is kept
+// readable (owner-only RLS) so the owner can copy the same link again at any time; the
+// family function still matches only its hash.
+async function readFamilyLink() {
+  const { data, error } = await _sb.from('access_links').select('token')
+    .eq('kind', 'family').eq('active', true).maybeSingle();
   if (error) throw error;
-  return data || [];
+  return (data && data.token) || null;
 }
 
-async function revokeLink(kind, kid) {
-  const k = linkScope(kind, kid);
-  let q = _sb.from('access_links').update({ active: false, revoked_at: new Date().toISOString() })
-    .eq('kind', kind).eq('active', true);
-  q = k == null ? q.is('kid', null) : q.eq('kid', k);
-  const { error } = await q;
-  if (error) throw error;
-}
-
-// Retires the active link of this kind/kid first (the partial unique index allows one
-// active per kind/kid), stores only the new token's hash and returns the token once.
-async function issueLink(kind, kid) {
-  const k = linkScope(kind, kid);
+async function insertFamilyLink() {
   const { generateToken, hashToken } = await import('./tokens.mjs');
   const token = generateToken();
-  const tokenHash = await hashToken(token);
-  await revokeLink(kind, k);
-  const { error } = await _sb.from('access_links').insert({ kind, kid: k, token_hash: tokenHash });
+  const { error } = await _sb.from('access_links')
+    .insert({ kind: 'family', kid: null, token, token_hash: await hashToken(token) });
+  return { token, error };
+}
+
+// The stored family link, issued on first use. A second tab issuing at the same moment
+// loses on the one-active-link index and then reads the winner's token.
+async function getFamilyLink() {
+  const stored = await readFamilyLink();
+  if (stored) return stored;
+  const { token, error } = await insertFamilyLink();
+  if (!error) return token;
+  if (error.code === '23505') {
+    const winner = await readFamilyLink();
+    if (winner) return winner;
+  }
+  throw error;
+}
+
+// For a leaked link: the old one stops working at once (its token is cleared too).
+async function replaceFamilyLink() {
+  const { error: e1 } = await _sb.from('access_links')
+    .update({ active: false, revoked_at: new Date().toISOString(), token: null })
+    .eq('kind', 'family').eq('active', true);
+  if (e1) throw e1;
+  const { token, error } = await insertFamilyLink();
   if (error) throw error;
   return token;
+}
+
+const MSG_CYCLE_EXISTS = 'כבר יש מחזור פתוח';
+
+// Opens a cycle by hand (the IEC bill did not arrive or could not be read). The status is
+// set explicitly: the column default is 'published', which would show an empty cycle to
+// the family. Bill fields stay empty until the owner fills them in the card.
+async function openCycleManually(todayIso) {
+  const { labelFromDate } = await import('./rules.mjs');
+  const { data: act, error: e0 } = await _sb.from('periods').select('id').neq('status', 'published').limit(1);
+  if (e0) throw e0;
+  if (act && act.length) throw new Error(MSG_CYCLE_EXISTS);
+  const { data, error } = await _sb.from('periods').insert({
+    status: 'open', label: labelFromDate(todayIso), tariff: null, water_total: null, water_share: null, reading_date: null,
+  }).select().single();
+  if (error) {
+    if (error.code === '23505') throw new Error(MSG_CYCLE_EXISTS);
+    throw error;
+  }
+  return data;
+}
+
+// Owner entry of the tariff and the water bill total on the active cycle. Never writes
+// status itself; readiness then decides open -> ready as for any other input.
+async function saveCycleAmounts(periodId, { tariff, waterTotal }) {
+  const { data, error } = await _sb.from('periods').update({ tariff, water_total: waterTotal })
+    .eq('id', periodId).in('status', ['open', 'ready']).select('id');
+  if (error) throw error;
+  if (!data || data.length !== 1) throw new Error('המחזור כבר פורסם, אי אפשר לשנות');
+  await markReadyIfComplete(periodId);
+}
+
+async function uploadCycleBill(periodId, kind, file) {
+  if (kind !== 'electricity_bill' && kind !== 'water_bill') throw new Error('bad bill kind');
+  await uploadDocument(periodId, kind, null, file);
+  await markReadyIfComplete(periodId);
 }
 
 // Each kid's previous reading: the latest published period's own current_reading, or the
@@ -313,4 +357,5 @@ async function publishCycle(periodId, readingDate) {
 window.store = { initSupabase, loadState, loadStateViaReport, saveCycle, getSession, signInWithPassword, signOut,
   updatePassword, listDocuments, uploadDocument, signedUrl, deleteDocument,
   saveProviderBill, deleteProviderDoc, KID_ORDER,
-  listActiveLinks, issueLink, revokeLink, saveOwnerReading, publishCycle };
+  readFamilyLink, getFamilyLink, replaceFamilyLink, openCycleManually, saveCycleAmounts, uploadCycleBill,
+  saveOwnerReading, publishCycle };
