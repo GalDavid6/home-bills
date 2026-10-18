@@ -207,14 +207,23 @@ export function startFamilyPage(token, { family = false } = {}) {
   }
 
   function form() {
+    // Two inputs feed one handler: the camera one forces the camera on iOS (capture), the gallery one has
+    // no capture attribute so iOS offers the photo library.
     const fileInput = el('input', {
       type: 'file', accept: 'image/*', capture: 'environment', id: 'famFile', class: 'fam-file',
       onchange: onFile,
     });
+    const galleryInput = el('input', {
+      type: 'file', accept: 'image/*', id: 'famGalleryFile', class: 'fam-file',
+      onchange: onFile,
+    });
     const shoot = el('button', {
       class: 'fam-btn', id: 'famShoot', type: 'button', onclick: () => fileInput.click(),
-    }, '📸 צלם את המונה');
-    const kids = [fileInput, shoot];
+    }, '📸 צלם');
+    const gallery = el('button', {
+      class: 'secondary fam-btn', id: 'famGallery', type: 'button', onclick: () => galleryInput.click(),
+    }, '🖼️ בחר מהגלריה');
+    const kids = [fileInput, galleryInput, el('div', { class: 'fam-actions' }, shoot, gallery)];
     if (previewUrl) kids.push(el('img', { class: 'fam-photo', id: 'famPreview', src: previewUrl, alt: '' }));
     kids.push(
       el('label', { for: 'famReading' }, 'קריאת המונה'),
