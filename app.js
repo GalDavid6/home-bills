@@ -40,7 +40,7 @@
     return `<svg class="sw" width="28" height="8" viewBox="0 0 28 8" aria-hidden="true"><line x1="2" y1="4" x2="26" y2="4" ` +
       `style="stroke:var(${k.color})" stroke-width="3" stroke-linecap="round"${k.dash ? ` stroke-dasharray="${k.dash}"` : ''}/></svg>`;
   };
-  const TABS = ['home', 'graphs', 'bills', 'past'];
+  const TABS = ['home', 'past', 'graphs', 'bills'];
   const TAB_KEY = 'hb.tab';
   const $ = (id) => document.getElementById(id);
   const ic = (name, size, sw) => window.icons.el(name, size, sw);
