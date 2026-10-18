@@ -83,11 +83,72 @@ function parseWaterTariff(rawText) {
   return { water: water[0], sewage: sewage[0] };
 }
 
+// "dd/mm/yyyy" -> "yyyy-mm-dd", or null when it is not a real calendar date.
+function ddmmyyyyToIso(s) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
+  if (d.getUTCFullYear() !== +m[3] || d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[1]) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+// IEC (electricity) invoice. pdf.js extracts the summary line as
+//   "3,060.45 חיוב בגין צריכה - סה"כ 5658 קוט"ש"   (charge before VAT, then kWh)
+// and the period with the END date first: "06/08/2026 08/06/2026 עד -מ" = 08/06 .. 06/08 (dd/mm).
+// The period is printed on every page (header and voucher); all copies must agree. Returns
+// { charge, kwh, from, to, tariff } | null, where tariff = round2(charge / kwh * 1.18) (VAT incl.).
+// Any missing, repeated-but-different or implausible value returns null.
+function parseIecBill(rawText) {
+  if (rawText == null) return null;
+  const text = norm(rawText);
+  const cons = [...text.matchAll(/([0-9][0-9,]*\.[0-9]{2})\s+חיוב בגין צריכה - סה"כ\s+([0-9][0-9,]*)\s+קוט"ש/g)];
+  if (!cons.length || cons.some((m) => m[1] !== cons[0][1] || m[2] !== cons[0][2])) return null;
+  const charge = Number(cons[0][1].replace(/,/g, ''));
+  const kwh = Number(cons[0][2].replace(/,/g, ''));
+  if (!(charge > 0) || !(kwh > 0)) return null;
+
+  const per = [...text.matchAll(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+עד\s*-?\s*מ/g)];
+  if (!per.length || per.some((m) => m[1] !== per[0][1] || m[2] !== per[0][2])) return null;
+  const to = ddmmyyyyToIso(per[0][1]);
+  const from = ddmmyyyyToIso(per[0][2]);
+  if (!to || !from || from > to) return null;
+
+  return { charge, kwh, from, to, tariff: Math.round(charge / kwh * 1.18 * 100) / 100 };
+}
+
+// Water (Kfar Saba) invoice total = water + sewage + VAT. pdf.js output for this bill is garbled
+// (mojibake labels, reversed/duplicated blocks), so the label cannot be trusted; the numbers can.
+// A total is accepted only when it reconciles on the bill itself: some two amounts a (water) and
+// b (sewage) plus a third amount v with v ~ 18% of (a + b) (within 2 agorot, VAT is rounded
+// per line) sum to it exactly. The total is repeated on the voucher and the detail table, so
+// duplicates collapse to one value. Zero or several distinct reconciling totals returns null.
+function parseWaterTotal(rawText) {
+  if (rawText == null) return null;
+  const toks = String(rawText).match(/(?<![\d.,])\d+(?:,\d{3})*\.\d{2}(?!\d|\.\d)/g) || [];
+  const vals = [...new Set(toks.map((t) => Math.round(Number(t.replace(/,/g, '')) * 100)))]
+    .filter((c) => c > 0).sort((x, y) => x - y);
+  if (vals.length > 300) return null; // cubic scan below; a real bill has a few dozen amounts
+  const set = new Set(vals);
+  const totals = new Set();
+  for (const t of vals) {
+    for (let i = 0; i < vals.length; i++) {
+      for (let j = i + 1; j < vals.length; j++) {
+        const a = vals[i], b = vals[j], v = t - a - b;
+        if (v <= 0 || !set.has(v) || a + b >= t) continue;
+        if (Math.abs(v - 0.18 * (a + b)) <= 2) totals.add(t);
+      }
+    }
+  }
+  return totals.size === 1 ? [...totals][0] / 100 : null;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseInvoiceTotal, providerZipName, parseWaterTariff, HE_MONTHS };
+  module.exports = { parseInvoiceTotal, providerZipName, parseWaterTariff, parseIecBill, parseWaterTotal, HE_MONTHS };
 }
 if (typeof window !== 'undefined') {
   window.parseInvoiceTotal = parseInvoiceTotal;
   window.providerZipName = providerZipName;
   window.parseWaterTariff = parseWaterTariff;
+  window.parseIecBill = parseIecBill;
+  window.parseWaterTotal = parseWaterTotal;
 }

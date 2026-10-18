@@ -1,4 +1,6 @@
-function formatMessage(r) {
+// opts.linkMode: end after the totals/anomaly lines (the caller appends the report link),
+// without the site URL and the viewer-password hint.
+function formatMessage(r, opts) {
   const lines = [];
   lines.push(`🏠 חשבונות בית — ${r.period}`);
   lines.push('');
@@ -21,6 +23,7 @@ function formatMessage(r) {
       lines.push(`• ${k.name}: ${signed(k.pct)}%`);
     }
   }
+  if (opts && opts.linkMode) return lines.join('\n');
   lines.push('');
   lines.push('🔗 לצפייה בפירוט, גרפים ומסמכים: https://galdavid6.github.io/home-bills/');
   lines.push('👁️ לחצו "צפייה" והזינו את הסיסמה שקיבלתם.');

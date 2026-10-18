@@ -3,10 +3,21 @@ const KID_ORDER = ['ירין', 'גל', 'ניב'];
 let _sb = null;
 
 function initSupabase() {
-  _sb = window.supabase.createClient(window.CONFIG.SUPABASE_URL, window.CONFIG.SUPABASE_ANON_KEY);
+  // persistSession keeps the owner signed in across browser restarts (the #owner route).
+  _sb = window.supabase.createClient(window.CONFIG.SUPABASE_URL, window.CONFIG.SUPABASE_ANON_KEY,
+    { auth: { persistSession: true, autoRefreshToken: true } });
   return _sb;
 }
 
+// Shared by loadState and loadStateViaReport so both return exactly the same shape.
+function buildState(periods, readings, baselines, otherBills) {
+  const st = window.rowsToState(periods || [], readings || [], baselines || [], KID_ORDER);
+  st.otherBills = (otherBills || []).slice().sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+  return st;
+}
+
+// History holds published periods only. The owner also reads the single open/ready
+// cycle; it is returned apart as activeCycle so the report cards never see a half cycle.
 async function loadState() {
   const [{ data: periods }, { data: readings }, { data: baselines }, { data: otherBills }] = await Promise.all([
     _sb.from('periods').select('*'),
@@ -14,13 +25,50 @@ async function loadState() {
     _sb.from('baselines').select('*'),
     _sb.from('other_bills').select('*'),
   ]);
-  const st = window.rowsToState(periods || [], readings || [], baselines || [], KID_ORDER);
-  st.otherBills = (otherBills || []).slice().sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+  const all = periods || [];
+  const published = all.filter((p) => !p.status || p.status === 'published');
+  const active = all.find((p) => p.status && p.status !== 'published') || null;
+  const st = buildState(published, readings, baselines, otherBills);
+  st.activeCycle = active
+    ? { period: active, readings: (readings || []).filter((r) => r.period_id === active.id) }
+    : null;
+  return st;
+}
+
+// Report link mode (#r=<token>): the only data source is the `family` edge function.
+// The token is sent as x-access-token only; never stored, logged or put in a URL.
+// Signed document urls from the response are kept by storage path so signedUrl() can serve them.
+let _reportUrls = null;
+
+function reportApiBase() {
+  // Dev-only: on localhost, ?mock=PORT points at scripts/mock-family.js.
+  const m = /^\?mock=(\d{2,5})$/.exec(location.search);
+  if (m && location.hostname === 'localhost') return `http://localhost:${m[1]}/functions/v1/family`;
+  return `${window.CONFIG.SUPABASE_URL}/functions/v1/family`;
+}
+
+async function loadStateViaReport(token) {
+  const res = await fetch(`${reportApiBase()}?action=report`, { headers: { 'x-access-token': token } });
+  if (!res.ok) {
+    const err = new Error(res.status === 401 ? 'unauthorized' : 'report failed');
+    err.status = res.status;
+    throw err;
+  }
+  const body = await res.json();
+  _reportUrls = new Map((body.documents || []).map((d) => [d.storage_path, d.url || null]));
+  const st = buildState(body.periods, body.readings, body.baselines, body.otherBills);
+  // documents carry their signed url (null when signing failed) for the renderers.
+  st.documents = body.documents || [];
   return st;
 }
 
 // Inserts the period + its readings and upserts baselines. Requires auth (RLS).
+// The manual flow is a fallback for when no cycle is open: with an open or ready cycle it
+// would publish a second period beside it, so it refuses.
 async function saveCycle(results, readingDate, baselineByName) {
+  const { data: act, error: e0 } = await _sb.from('periods').select('id').neq('status', 'published').limit(1);
+  if (e0) throw e0;
+  if (act && act.length) throw new Error('יש מחזור פתוח: יש להשלים אותו בכרטיס המחזור');
   const { period, readings } = window.cycleToRows(results, readingDate);
   const { data: inserted, error: e1 } = await _sb.from('periods').insert(period).select().single();
   if (e1) throw e1;
@@ -85,6 +133,11 @@ async function saveProviderBill(provider, month, amount, file) {
 async function deleteProviderDoc(doc) { return deleteDocument(doc); }
 
 async function signedUrl(path) {
+  if (_reportUrls) {
+    const u = _reportUrls.get(path);
+    if (!u) throw new Error('document unavailable');
+    return u;
+  }
   const { data, error } = await _sb.storage.from('documents').createSignedUrl(path, 60);
   if (error) throw error;
   return data.signedUrl;
@@ -96,6 +149,168 @@ async function deleteDocument(doc) {
   if (error) throw error;
 }
 
-window.store = { initSupabase, loadState, saveCycle, getSession, signInWithPassword, signOut,
+// ---------- owner tools (#owner) ----------
+
+const KID_SLUGS = { 'ירין': 'yarin', 'גל': 'gal', 'ניב': 'niv' };
+const PHOTO_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' };
+const roundCents = (n) => Math.round(n * 100) / 100;
+
+function linkScope(kind, kid) {
+  if (kind === 'meter' && KID_ORDER.includes(kid)) return kid;
+  if (kind === 'report' && kid == null) return null;
+  throw new Error('bad link kind/kid');
+}
+
+// Active links only (kind, kid); the tokens themselves are never stored.
+async function listActiveLinks() {
+  const { data, error } = await _sb.from('access_links').select('kind, kid, created_at').eq('active', true);
+  if (error) throw error;
+  return data || [];
+}
+
+async function revokeLink(kind, kid) {
+  const k = linkScope(kind, kid);
+  let q = _sb.from('access_links').update({ active: false, revoked_at: new Date().toISOString() })
+    .eq('kind', kind).eq('active', true);
+  q = k == null ? q.is('kid', null) : q.eq('kid', k);
+  const { error } = await q;
+  if (error) throw error;
+}
+
+// Retires the active link of this kind/kid first (the partial unique index allows one
+// active per kind/kid), stores only the new token's hash and returns the token once.
+async function issueLink(kind, kid) {
+  const k = linkScope(kind, kid);
+  const { generateToken, hashToken } = await import('./tokens.mjs');
+  const token = generateToken();
+  const tokenHash = await hashToken(token);
+  await revokeLink(kind, k);
+  const { error } = await _sb.from('access_links').insert({ kind, kid: k, token_hash: tokenHash });
+  if (error) throw error;
+  return token;
+}
+
+// Each kid's previous reading: the latest published period's own current_reading, or the
+// baseline when that is missing (see previousByKid). Baselines are only written by publish.
+async function previousReadings() {
+  const { data: prev, error: e1 } = await _sb.from('periods').select('id').eq('status', 'published')
+    .not('reading_date', 'is', null).order('reading_date', { ascending: false }).limit(1).maybeSingle();
+  if (e1) throw e1;
+  const [r, b] = await Promise.all([
+    prev ? _sb.from('electricity_readings').select('kid, current_reading').eq('period_id', prev.id)
+      : Promise.resolve({ data: [], error: null }),
+    _sb.from('baselines').select('*'),
+  ]);
+  if (r.error || b.error) throw r.error || b.error;
+  return window.ownerCycle.previousByKid({ prevReadings: r.data, baselines: b.data });
+}
+
+// Same rule as the family function: open -> ready once all three readings, both bills,
+// the tariff and the water total are in. Never moves a cycle backwards or past ready.
+async function markReadyIfComplete(periodId) {
+  const { cycleReadiness } = await import('./rules.mjs');
+  const [p, r, d] = await Promise.all([
+    _sb.from('periods').select('status, tariff, water_total').eq('id', periodId).single(),
+    _sb.from('electricity_readings').select('kid').eq('period_id', periodId).not('current_reading', 'is', null),
+    _sb.from('documents').select('kind').eq('period_id', periodId).in('kind', ['electricity_bill', 'water_bill']),
+  ]);
+  if (p.error || r.error || d.error) throw p.error || r.error || d.error;
+  if (p.data.status !== 'open') return;
+  const kinds = new Set((d.data || []).map((x) => x.kind));
+  const { ready } = cycleReadiness({
+    tariff: p.data.tariff, waterTotal: p.data.water_total, kidsSubmitted: (r.data || []).map((x) => x.kid),
+    hasElectricityBill: kinds.has('electricity_bill'), hasWaterBill: kinds.has('water_bill'),
+  });
+  if (!ready) return;
+  const { error } = await _sb.from('periods').update({ status: 'ready' }).eq('id', periodId).eq('status', 'open');
+  if (error) throw error;
+}
+
+// Owner entry or correction of one kid's reading in the active cycle. Writes
+// submitted_by 'owner' (never 'link', so the HB409 trigger does not apply), updating the
+// existing row instead of upserting. The photo is optional; when given it replaces the
+// kid's meter photo the same way a family submission does.
+async function saveOwnerReading(periodId, kid, reading, file) {
+  if (!KID_ORDER.includes(kid)) throw new Error('bad kid');
+  // A stale tab must not write into a cycle that was published meanwhile.
+  const { data: per, error: ep } = await _sb.from('periods').select('status').eq('id', periodId).single();
+  if (ep) throw ep;
+  if (per.status !== 'open' && per.status !== 'ready') throw new Error('המחזור כבר פורסם, אי אפשר לשנות קריאה');
+  const prev = (await previousReadings())[kid];
+  if (prev == null) throw new Error('חסרה קריאה קודמת');
+  let path = null;
+  if (file) {
+    path = `${periodId}/meter_photo-${KID_SLUGS[kid]}-${Date.now()}.${PHOTO_EXT[file.type] || 'jpg'}`;
+    const up = await _sb.storage.from('documents').upload(path, file, { contentType: file.type || 'image/jpeg' });
+    if (up.error) throw up.error;
+  }
+  const discard = async () => { if (path) await _sb.storage.from('documents').remove([path]); };
+  const fields = {
+    current_reading: reading,
+    consumption: roundCents(reading - prev),
+    electricity: null,
+    submitted_by: 'owner',
+    submitted_at: new Date().toISOString(),
+  };
+  const { data: existing, error: e0 } = await _sb.from('electricity_readings').select('id')
+    .eq('period_id', periodId).eq('kid', kid).maybeSingle();
+  if (e0) { await discard(); throw e0; }
+  const w = existing
+    ? await _sb.from('electricity_readings').update(fields).eq('id', existing.id)
+    : await _sb.from('electricity_readings').insert(Object.assign({ period_id: periodId, kid }, fields));
+  if (w.error) { await discard(); throw w.error; }
+  if (path) {
+    const { data: docs, error: e1 } = await _sb.from('documents').select('id, storage_path')
+      .eq('period_id', periodId).eq('kind', 'meter_photo').eq('kid', kid);
+    if (e1) throw e1;
+    const docFields = { storage_path: path, label: `מונה ${kid}`, uploaded_at: new Date().toISOString() };
+    const d = docs && docs.length
+      ? await _sb.from('documents').update(docFields).in('id', docs.map((x) => x.id))
+      : await _sb.from('documents').insert(Object.assign({ period_id: periodId, kind: 'meter_photo', kid }, docFields));
+    if (d.error) throw d.error;
+    const old = (docs || []).map((x) => x.storage_path).filter((p) => p && p !== path);
+    if (old.length) await _sb.storage.from('documents').remove(old);
+  }
+  await markReadyIfComplete(periodId);
+}
+
+// ready -> published. Electricity is computed with calc.js (planPublish in owner-cycle.js)
+// against the previous published period's readings; readings are updated without touching
+// submitted_at, baselines advance (output only), reading_date and label are set, and the
+// status flips last and only from 'ready'. A retry after a partial failure recomputes from
+// the same previous readings, so it gives the same (or the corrected) numbers.
+async function publishCycle(periodId, readingDate) {
+  const { labelFromDate } = await import('./rules.mjs');
+  const { data: period, error: ep } = await _sb.from('periods').select('*').eq('id', periodId).single();
+  if (ep) throw ep;
+  if (period.status !== 'ready') throw new Error('אפשר לאשר רק מחזור שמוכן לאישור');
+  const { data: readings, error: er } = await _sb.from('electricity_readings').select('*').eq('period_id', periodId);
+  if (er) throw er;
+  const previous = await previousReadings();
+  const plan = window.ownerCycle.planPublish({ period, readings, previous, readingDate },
+    { computeCycle: window.computeCycle, labelFromDate });
+  for (const row of plan.rows) {
+    const { data, error } = await _sb.from('electricity_readings')
+      .update({ consumption: row.consumption, electricity: row.electricity })
+      .eq('period_id', periodId).eq('kid', row.kid).select('id');
+    if (error) throw error;
+    if (!data || data.length !== 1) throw new Error(`עדכון הקריאה של ${row.kid} נכשל`);
+  }
+  const { error: e2 } = await _sb.from('baselines')
+    .upsert(KID_ORDER.map((kid) => ({ kid, last_reading: plan.baselines[kid] })));
+  if (e2) throw e2;
+  const { error: e3 } = await _sb.from('periods')
+    .update({ reading_date: readingDate, label: plan.label, water_share: plan.waterShare })
+    .eq('id', periodId).eq('status', 'ready');
+  if (e3) throw e3;
+  const { data: done, error: e4 } = await _sb.from('periods').update({ status: 'published' })
+    .eq('id', periodId).eq('status', 'ready').select('id');
+  if (e4) throw e4;
+  if (!done || done.length !== 1) throw new Error('הפרסום נכשל, נסו שוב');
+  return plan;
+}
+
+window.store = { initSupabase, loadState, loadStateViaReport, saveCycle, getSession, signInWithPassword, signOut,
   updatePassword, listDocuments, uploadDocument, signedUrl, deleteDocument,
-  saveProviderBill, deleteProviderDoc, KID_ORDER };
+  saveProviderBill, deleteProviderDoc, KID_ORDER,
+  listActiveLinks, issueLink, revokeLink, saveOwnerReading, publishCycle };
