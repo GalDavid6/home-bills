@@ -3,7 +3,7 @@
 //   #f=<token>  (the one family link): index.html renders the report; this module adds the
 //               "new cycle open" card on top, the kid chooser and the same single-kid flow.
 // The token lives in memory only (never storage, never a URL query, never logged).
-import { parseReadingInput, validateReading, checkPhoto, familyUpdateCard } from './rules.mjs?v=b3d2a2a';
+import { parseReadingInput, validateReading, confirmApplies, checkPhoto, familyUpdateCard } from './rules.mjs?v=55ba2bd';
 
 const MSG_UNAUTHORIZED = 'הקישור אינו בתוקף';
 const MSG_NETWORK = 'אין חיבור, נסו שוב';
@@ -279,7 +279,7 @@ export function startFamilyPage(token, { family = false } = {}) {
     if (!blob) { flash = MSG_NEED_PHOTO; pendingWarn = null; return render(); }
     if (reading == null || reading <= 0) { flash = MSG_BAD_READING; pendingWarn = null; return render(); }
     // Confirm only ever applies to the exact number that was warned about.
-    if (confirmed && (!pendingWarn || pendingWarn.reading !== reading)) confirmed = false;
+    if (confirmed && !confirmApplies(pendingWarn, reading)) confirmed = false;
     if (!confirmed) {
       const check = validateReading({
         reading, previous: ctx.previous, days: wholeDaysSince(ctx.previousDate), maxDailyHistory: ctx.maxDaily,

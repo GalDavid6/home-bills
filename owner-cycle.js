@@ -11,6 +11,7 @@
   const MSG_OPEN_CYCLE = 'לפתוח מחזור חדש ידנית?';
   const MSG_APPROVE = 'לאשר ולפרסם את המחזור? המשפחה תראה את הדוח';
   const MSG_OVERRIDE = 'בדקתי, לשמור';
+  const MSG_CONFIRM = 'כן, המספר נכון';
   const MSG_BAD_READING = 'נא להזין מספר בלבד';
   const MSG_PHOTO = 'התמונה לא נתמכת או גדולה מדי';
   const STATUS_TEXT = { open: 'ממתין לקריאות', ready: 'מוכן לאישור', published: 'פורסם' };
@@ -223,13 +224,13 @@
 
   let rulesPromise = null;
   function loadRules() {
-    if (!rulesPromise) rulesPromise = import('./rules.mjs?v=b3d2a2a');
+    if (!rulesPromise) rulesPromise = import('./rules.mjs?v=55ba2bd');
     return rulesPromise;
   }
 
   async function preparePhoto(file, rules) {
     try {
-      const { downscaleImage } = await import('./family-page.js?v=b3d2a2a');
+      const { downscaleImage } = await import('./family-page.js?v=55ba2bd');
       const blob = await downscaleImage(file);
       return new File([blob], 'meter.jpg', { type: 'image/jpeg' });
     } catch (e) {
@@ -361,7 +362,10 @@
       const form = el('div', { class: 'own-form', hidden: true },
         el('label', {}, `קריאה של ${k.kid}`), input,
         el('label', {}, 'תמונת מונה (לא חובה)'), photo, save, msg);
-      input.addEventListener('input', () => msg.replaceChildren());
+      input.addEventListener('input', () => { pendingWarn = null; msg.replaceChildren(); });
+
+      // The reading the amber warning is about: its confirm button saves only that number.
+      let pendingWarn = null;
 
       async function doSave(reading) {
         save.disabled = true;
@@ -377,6 +381,7 @@
       }
 
       save.addEventListener('click', () => {
+        const { confirmApplies } = rules;
         const reading = rules.parseReadingInput(input.value);
         if (reading == null || reading <= 0) {
           msg.replaceChildren(el('div', { class: 'msg err' }, MSG_BAD_READING));
@@ -394,12 +399,23 @@
         const check = rules.validateReading({
           reading, previous: v.previous, days: v.days, maxDailyHistory: rules.maxDailyConsumption(v.history),
         });
+        pendingWarn = null;
         if (check.level === 'ok') { doSave(reading); return; }
-        // The owner may save past a block or a warning, but only after saying he checked this number.
+        if (check.level === 'warn') {
+          // Same as the family page: amber warning, "yes, the number is right" saves exactly this number.
+          pendingWarn = { reading };
+          msg.replaceChildren(
+            el('div', { class: 'msg warn' }, check.message),
+            el('button', {
+              class: 'secondary own-confirm',
+              onclick: () => { if (confirmApplies(pendingWarn, reading)) doSave(reading); },
+            }, MSG_CONFIRM));
+          return;
+        }
+        // Blocked: the owner may still save, but only after saying he checked this number.
         msg.replaceChildren(
-          el('div', { class: 'msg ' + (check.level === 'block' ? 'err' : 'warn') }, check.message),
-          el('button', { class: 'secondary own-override', onclick: () => doSave(reading) }, MSG_OVERRIDE),
-        );
+          el('div', { class: 'msg err' }, check.message),
+          el('button', { class: 'secondary own-override', onclick: () => doSave(reading) }, MSG_OVERRIDE));
       });
       return form;
     }

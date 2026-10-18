@@ -22,6 +22,13 @@ export function validateReading({ reading, previous, days, maxDailyHistory }) {
   return { level: 'ok', message: null };
 }
 
+// A "yes, the number is right" confirmation only ever applies to the exact number that was
+// warned about. pending = { reading } from the warning, or null. Shared by the family page and
+// the owner card so the two cannot drift apart.
+export function confirmApplies(pending, reading) {
+  return !!pending && pending.reading === reading;
+}
+
 function wholeDays(isoA, isoB) {
   const t = (iso) => {
     const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
