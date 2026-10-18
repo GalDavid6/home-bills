@@ -1,5 +1,6 @@
 // Owner tools for the active cycle: status card, per-kid manual entry, the family link
-// (copy / replace), WhatsApp reminder/report, manual open, tariff/water/bills and approve. A classic script (UMD, like calc.js) so the pure
+// (copy / replace), WhatsApp reminder/report and approve. Bills, tariff and water total come
+// only from email (the daily ingest); the card shows them read-only. A classic script (UMD, like calc.js) so the pure
 // helpers below are unit-tested in Node; the ESM rules (rules.mjs) and the photo downscaler
 // (family-page.js) are loaded with dynamic import() only when the card runs in the browser.
 (function () {
@@ -8,7 +9,6 @@
   const TZ = 'Asia/Jerusalem';
   const REMINDER_HEAD = 'היי 👋 הגיע הזמן לצלם את המונים לחשבון החשמל.';
   const MSG_REPLACE = 'ליצור קישור חדש? הקישור הקודם יפסיק לעבוד';
-  const MSG_OPEN_CYCLE = 'לפתוח מחזור חדש ידנית?';
   const MSG_APPROVE = 'לאשר ולפרסם את המחזור? המשפחה תראה את הדוח';
   const MSG_OVERRIDE = 'בדקתי, לשמור';
   const MSG_CONFIRM = 'כן, המספר נכון';
@@ -41,15 +41,6 @@
     const m = /^(.*#f=)(.*)$/.exec(url || '');
     if (!m || m[2].length <= 8) return url || '';
     return m[1] + m[2].slice(0, 6) + '…';
-  }
-
-  // Tariff or water total as the owner types it: digits, optional comma/dot and up to 4 decimals, above 0.
-  function parseAmount(text) {
-    if (typeof text !== 'string') return null;
-    const m = /^(\d+)(?:[.,](\d{1,4}))?$/.exec(text.trim());
-    if (!m) return null;
-    const n = Number(m[2] === undefined ? m[1] : `${m[1]}.${m[2]}`);
-    return n > 0 ? n : null;
   }
 
   function round2(n) {
@@ -309,51 +300,6 @@
           el('div', { class: 'hint' }, 'אם הקישור דלף: קישור חדש, והקודם יפסיק לעבוד.'), replace));
     }
 
-    // Tariff, water total and the two bills of the active cycle (needed before approve).
-    function cycleBills() {
-      const p = active.period;
-      const tariff = el('input', { id: 'ownTariff', type: 'text', inputmode: 'decimal', dir: 'ltr', value: p.tariff == null ? '' : String(p.tariff) });
-      const water = el('input', { id: 'ownWater', type: 'text', inputmode: 'decimal', dir: 'ltr', value: p.water_total == null ? '' : String(p.water_total) });
-      const msg = el('div', { class: 'own-msg', id: 'ownAmountsMsg' });
-      const save = el('button', { class: 'secondary own-sm', id: 'ownAmountsSave' }, 'שמור סכומים');
-      save.addEventListener('click', async () => {
-        const read = (input) => (input.value.trim() === '' ? null : parseAmount(input.value));
-        const t = read(tariff);
-        const w = read(water);
-        if ((tariff.value.trim() && t == null) || (water.value.trim() && w == null)) {
-          msg.replaceChildren(el('div', { class: 'msg err' }, MSG_BAD_READING));
-          return;
-        }
-        save.disabled = true;
-        try {
-          await store.saveCycleAmounts(model.id, { tariff: t, waterTotal: w });
-          await ctx.reload();
-        } catch (e) {
-          save.disabled = false;
-          msg.replaceChildren(el('div', { class: 'msg err' }, 'שמירה נכשלה: ' + errMsg(e)));
-        }
-      });
-      const upload = (kind, label, done) => {
-        const file = el('input', { type: 'file', class: 'own-billfile', id: kind === 'water_bill' ? 'ownWaterFile' : 'ownElecFile', accept: 'application/pdf,image/*' });
-        file.addEventListener('change', async () => {
-          if (!file.files || !file.files[0]) return;
-          msg.replaceChildren(el('div', { class: 'hint' }, 'מעלה...'));
-          try {
-            await store.uploadCycleBill(model.id, kind, file.files[0]);
-            await ctx.reload();
-          } catch (e) { msg.replaceChildren(el('div', { class: 'msg err' }, 'העלאה נכשלה: ' + errMsg(e))); }
-        });
-        return el('label', { class: 'own-billrow' }, `${label} ${done ? '✅' : '⏳'} (${done ? 'להחליף' : 'להעלות'})`, file);
-      };
-      return el('div', { class: 'own-cyclebills', id: 'ownCycleBills' },
-        el('label', { for: 'ownTariff' }, 'תעריף לקוט"ש (₪)'), tariff,
-        el('label', { for: 'ownWater' }, 'סכום חשבון מים (₪)'), water,
-        save,
-        upload('electricity_bill', 'חשבון חשמל', model.bills.electricity),
-        upload('water_bill', 'חשבון מים', model.bills.water),
-        msg);
-    }
-
     function entryForm(k) {
       const input = el('input', { class: 'own-reading', type: 'text', inputmode: 'decimal', dir: 'ltr', placeholder: 'קריאת המונה' });
       const photo = el('input', { class: 'own-photo', type: 'file', accept: 'image/*' });
@@ -476,7 +422,6 @@
         + (notes.length ? ' · ' + notes.join(' · ') : '')));
     }
 
-    if (model && model.status !== 'published') children.push(cycleBills());
     children.push(familySection());
 
     const actions = el('div', { class: 'own-actions' });
@@ -524,26 +469,13 @@
       class: 'secondary', id: 'ownReport',
       onclick: () => sendReport(),
     }, '📤 שלח דוח אחרון'));
-    if (!active) {
-      // The IEC bill did not arrive (or could not be read): Gal opens the cycle himself.
-      actions.append(el('button', {
-        class: 'secondary', id: 'ownOpenCycle',
-        onclick: async () => {
-          if (!window.confirm(MSG_OPEN_CYCLE)) return;
-          try {
-            await store.openCycleManually(israelDate(new Date().toISOString()));
-            await ctx.reload();
-          } catch (e) { showErr('פתיחת המחזור נכשלה: ' + errMsg(e)); }
-        },
-      }, '🆕 פתח מחזור'));
-    }
     children.push(actions, out);
 
     host.replaceChildren(el('div', { class: 'card', id: 'ownerCard' }, ...children));
   }
 
   const api = {
-    whatsappUrl, familyUrl, reminderText, reportText, shortLink, parseAmount, planPublish, previousByKid, statusModel, reportResults,
+    whatsappUrl, familyUrl, reminderText, reportText, shortLink, planPublish, previousByKid, statusModel, reportResults,
     defaultReadingDate, fmtSubmittedAt, kidValidationInput, renderOwnerCard,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

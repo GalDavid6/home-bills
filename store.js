@@ -206,53 +206,6 @@ async function replaceFamilyLink() {
   return token;
 }
 
-const MSG_CYCLE_EXISTS = 'כבר יש מחזור פתוח';
-
-// Opens a cycle by hand (the IEC bill did not arrive or could not be read). The status is
-// set explicitly: the column default is 'published', which would show an empty cycle to
-// the family. Bill fields stay empty until the owner fills them in the card.
-async function openCycleManually(todayIso) {
-  const { labelFromDate } = await import('./rules.mjs?v=22ae56ce');
-  const { data: act, error: e0 } = await _sb.from('periods').select('id').neq('status', 'published').limit(1);
-  if (e0) throw e0;
-  if (act && act.length) throw new Error(MSG_CYCLE_EXISTS);
-  const { data, error } = await _sb.from('periods').insert({
-    status: 'open', label: labelFromDate(todayIso), tariff: null, water_total: null, water_share: null, reading_date: null,
-  }).select().single();
-  if (error) {
-    if (error.code === '23505') throw new Error(MSG_CYCLE_EXISTS);
-    throw error;
-  }
-  return data;
-}
-
-// Owner entry of the tariff and the water bill total on the active cycle. Never writes
-// status itself; readiness then decides open -> ready as for any other input.
-// A ready cycle is complete: clearing either amount would leave it 'ready' while incomplete
-// (nothing moves a cycle back to open), so that is refused; correcting a value is allowed.
-const MSG_READY_NEEDS_AMOUNTS = 'המחזור מוכן לאישור: אי אפשר למחוק את התעריף או את סכום חשבון המים';
-
-async function saveCycleAmounts(periodId, { tariff, waterTotal }) {
-  const clearing = tariff == null || waterTotal == null;
-  if (clearing) {
-    const { data: per, error: ep } = await _sb.from('periods').select('status').eq('id', periodId).single();
-    if (ep) throw ep;
-    if (per.status === 'ready') throw new Error(MSG_READY_NEEDS_AMOUNTS);
-  }
-  // When clearing, the write is also limited to 'open' so a cycle that turned ready meanwhile is not emptied.
-  const { data, error } = await _sb.from('periods').update({ tariff, water_total: waterTotal })
-    .eq('id', periodId).in('status', clearing ? ['open'] : ['open', 'ready']).select('id');
-  if (error) throw error;
-  if (!data || data.length !== 1) throw new Error('המחזור כבר פורסם, אי אפשר לשנות');
-  await markReadyIfComplete(periodId);
-}
-
-async function uploadCycleBill(periodId, kind, file) {
-  if (kind !== 'electricity_bill' && kind !== 'water_bill') throw new Error('bad bill kind');
-  await uploadDocument(periodId, kind, null, file);
-  await markReadyIfComplete(periodId);
-}
-
 // Each kid's previous reading: the latest published period's own current_reading, or the
 // baseline when that is missing (see previousByKid). Baselines are only written by publish.
 async function previousReadings() {
@@ -376,5 +329,5 @@ async function publishCycle(periodId, readingDate) {
 window.store = { initSupabase, loadState, loadStateViaReport, saveCycle, getSession, signInWithPassword, signOut,
   updatePassword, listDocuments, uploadDocument, signedUrl, deleteDocument,
   saveProviderBill, deleteProviderDoc, KID_ORDER,
-  readFamilyLink, getFamilyLink, replaceFamilyLink, openCycleManually, saveCycleAmounts, uploadCycleBill,
+  readFamilyLink, getFamilyLink, replaceFamilyLink,
   saveOwnerReading, publishCycle };
