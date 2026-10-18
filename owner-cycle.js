@@ -175,8 +175,56 @@
         water: docs.some((d) => d.kind === 'water_bill'),
       },
       missing,
+      tariff: period.tariff == null || period.tariff === '' ? null : Number(period.tariff),
       canApprove: period.status === 'ready',
     };
+  }
+
+  // The approve sheet's checklist: both bills, the three meters and the tariff.
+  function approveChecks(model) {
+    const done = model.kids.filter((k) => k.done).length;
+    return [
+      { key: 'electricity', ok: model.bills.electricity, text: 'חשבון חשמל' },
+      { key: 'water', ok: model.bills.water, text: 'חשבון מים' },
+      { key: 'meters', ok: done === KIDS.length, text: done === KIDS.length ? '3 מונים' : `${done} מתוך 3 מונים` },
+      { key: 'tariff', ok: model.tariff != null, text: model.tariff != null ? `תעריף ${model.tariff} ₪` : 'תעריף' },
+      { key: 'waterTotal', ok: !model.missing.includes('water_total'), text: 'סכום מים' },
+    ];
+  }
+
+  // A kid's previous reading as the owner card sees it: the last published period's own
+  // reading, else the baseline (same order as saveOwnerReading's previousReadings).
+  function ownerPrevious(state, kid) {
+    const hist = state.history || [];
+    const last = hist[hist.length - 1];
+    if (last && last.kids && last.kids[kid] && last.kids[kid].reading != null) return last.kids[kid].reading;
+    const row = (state.kids || []).find((x) => x.name === kid);
+    return row ? row.lastReading : 0;
+  }
+
+  // What approving the active cycle would send: the WhatsApp text (with the family link, or
+  // a placeholder when none was issued yet) and each kid's reading and consumption.
+  // deps: { computeCycle, labelFromDate, compareCycle, formatMessage }. null without a cycle;
+  // { ok: false, error } when the cycle cannot be published yet.
+  function approvePreview({ state, readingDate, token }, deps) {
+    const active = state.activeCycle;
+    if (!active) return null;
+    const previous = {};
+    KIDS.forEach((k) => { previous[k] = ownerPrevious(state, k); });
+    let plan;
+    try {
+      plan = planPublish({ period: active.period, readings: active.readings, previous, readingDate }, deps);
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+    const results = deps.compareCycle(plan.results, state.history || []);
+    const url = token ? familyUrl(token) : SITE + '#f=…';
+    const kids = plan.rows.map((r) => ({
+      kid: r.kid,
+      reading: Number(active.readings.find((x) => x.kid === r.kid).current_reading),
+      consumption: r.consumption,
+    }));
+    return { ok: true, text: reportText(results, url, deps.formatMessage), kids, plan };
   }
 
   // formatMessage input for the newest published period, compared with the one before it.
@@ -212,6 +260,8 @@
     kids.forEach((c) => { if (c != null && c !== false) n.append(c); });
     return n;
   }
+  const ic = (name, size, sw) => window.icons.el(name, size, sw);
+  const fmtN = (n, d) => (n == null || isNaN(n) ? '-' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d || 0 }));
 
   let rulesPromise = null;
   function loadRules() {
@@ -221,7 +271,7 @@
 
   async function preparePhoto(file, rules) {
     try {
-      const { downscaleImage } = await import('./family-page.js?v=e30aaaf8');
+      const { downscaleImage } = await import('./family-page.js?v=62465187');
       const blob = await downscaleImage(file);
       return new File([blob], 'meter.jpg', { type: 'image/jpeg' });
     } catch (e) {
@@ -240,15 +290,14 @@
     const model = active ? statusModel({ period: active.period, readings: active.readings, documents: state.documents }) : null;
     if (!ctx.out) ctx.out = el('div', { class: 'own-out', id: 'ownOut' });
     const out = ctx.out;
-    const rerender = () => renderOwnerCard(host, ctx);
     const errMsg = (e) => (e && e.message) || String(e);
-    const showErr = (text) => out.replaceChildren(el('div', { class: 'msg err', id: 'ownErr' }, text));
+    const showErr = (text) => out.replaceChildren(el('div', { class: 'msg err', id: 'ownErr', role: 'alert' }, text));
 
     function showWa(text) {
       const url = whatsappUrl(text);
       out.replaceChildren(
         el('pre', { id: 'ownWaText' }, text),
-        el('a', { id: 'ownWaGo', class: 'own-wa', href: url, target: '_blank', rel: 'noopener' }, '📲 פתח WhatsApp'),
+        el('a', { id: 'ownWaGo', class: 'own-wa', href: url, target: '_blank', rel: 'noopener' }, 'פתיחה בוואטסאפ'),
       );
       // Usually opens WhatsApp directly; if the browser blocks it, the button above does it in one tap.
       try { window.open(url, '_blank'); } catch (e) { /* the button stays */ }
@@ -269,56 +318,67 @@
       return u;
     }
 
+    async function copyFamilyLink(btn, doneText) {
+      try {
+        const u = await familyLink();
+        // The clipboard can refuse after the network wait (phones); then the link is shown whole to copy by hand.
+        if (await copyText(u)) { if (btn) btn.replaceChildren(ic('check', 14, 2.6), doneText); return true; }
+        out.replaceChildren(el('input', { id: 'ownLinkUrl', readonly: true, value: u, dir: 'ltr', 'aria-label': 'הקישור המשפחתי' }));
+        return false;
+      } catch (e) { showErr('הקישור לא נטען: ' + errMsg(e)); return false; }
+    }
+
     function familySection() {
       const url = ctx.familyToken ? familyUrl(ctx.familyToken) : null;
       const shown = el('div', { class: 'own-famurl', id: 'ownFamUrl', dir: 'ltr' }, url ? shortLink(url) : 'עוד אין קישור');
       famShown = shown;
-      const copy = el('button', { class: 'secondary own-sm', id: 'ownFamCopy' }, 'העתק');
-      copy.addEventListener('click', async () => {
-        try {
-          const u = await familyLink();
-          // The clipboard can refuse after the network wait (phones); then the link is shown whole to copy by hand.
-          if (await copyText(u)) copy.textContent = 'הועתק ✓';
-          else out.replaceChildren(el('input', { id: 'ownLinkUrl', readonly: true, value: u, dir: 'ltr' }));
-        } catch (e) { showErr('הקישור לא נטען: ' + errMsg(e)); }
-      });
-      const replace = el('button', { class: 'secondary own-sm', id: 'ownFamReplace' }, 'החלף קישור');
+      const copy = el('button', { class: 'btn sm secondary', id: 'ownFamCopy', type: 'button' }, 'העתק');
+      copy.addEventListener('click', () => copyFamilyLink(copy, 'הועתק'));
+      const replace = el('button', { class: 'btn sm secondary', id: 'ownFamReplace', type: 'button' }, 'החלף קישור');
       replace.addEventListener('click', async () => {
         if (!window.confirm(MSG_REPLACE)) return;
         try {
           ctx.familyToken = await store.replaceFamilyLink();
           const u = familyUrl(ctx.familyToken);
           shown.textContent = shortLink(u);
-          out.replaceChildren(el('input', { id: 'ownLinkUrl', readonly: true, value: u, dir: 'ltr' }));
-          if (await copyText(u)) replace.textContent = 'הוחלף והועתק ✓';
+          out.replaceChildren(el('input', { id: 'ownLinkUrl', readonly: true, value: u, dir: 'ltr', 'aria-label': 'הקישור המשפחתי' }));
+          if (await copyText(u)) replace.replaceChildren(ic('check', 14, 2.6), 'הוחלף והועתק');
         } catch (e) { showErr('החלפת הקישור נכשלה: ' + errMsg(e)); }
       });
-      return el('div', { class: 'own-kid own-family', id: 'ownFamily' },
-        el('div', { class: 'own-top' }, el('span', { class: 'own-name' }, 'קישור משפחתי')),
-        el('div', { class: 'own-btns' }, shown, copy),
+      return el('div', { class: 'own-section', id: 'ownFamily' },
+        el('h3', { class: 'own-name' }, 'קישור משפחתי'),
+        el('div', { class: 'btns' }, shown, copy),
         el('details', { class: 'own-adv', id: 'ownAdvanced' }, el('summary', {}, 'מתקדם'),
           el('div', { class: 'hint' }, 'אם הקישור דלף: קישור חדש, והקודם יפסיק לעבוד.'), replace));
     }
 
-    function entryForm(k) {
-      const input = el('input', { class: 'own-reading', type: 'text', inputmode: 'decimal', dir: 'ltr', placeholder: 'קריאת המונה' });
-      const photo = el('input', { class: 'own-photo', type: 'file', accept: 'image/*' });
-      const msg = el('div', { class: 'own-msg' });
-      const save = el('button', { class: 'own-save' }, 'שמור');
-      const form = el('div', { class: 'own-form', hidden: true },
-        el('label', {}, `קריאה של ${k.kid}`), input,
-        el('label', {}, 'תמונת מונה (לא חובה)'), photo, save, msg);
-      input.addEventListener('input', () => { pendingWarn = null; msg.replaceChildren(); });
-
+    // Per-kid entry or correction, in its own sheet.
+    function openEdit(kid) {
+      const k = model.kids.find((x) => x.kid === kid);
+      const titleId = 'ownEditTitle';
+      const input = el('input', { class: 'own-reading', type: 'text', inputmode: 'decimal', dir: 'ltr', id: 'ownEditReading',
+        placeholder: 'קריאת המונה', 'data-autofocus': true, value: k.done ? String(k.reading) : '' });
+      const photo = el('input', { class: 'own-photo', type: 'file', accept: 'image/*', id: 'ownEditPhoto' });
+      const msg = el('div', { class: 'own-msg', role: 'status' });
+      const save = el('button', { class: 'btn own-save', type: 'button' }, 'שמירה');
+      const content = el('div', { class: 'own-form', 'data-kid': kid },
+        el('div', { class: 'sheet-head' },
+          el('h2', { id: titleId }, `${k.done ? 'תיקון' : 'הזנת'} קריאה של ${kid}`),
+          el('button', { class: 'icon-btn sm', type: 'button', 'aria-label': 'סגירה', 'data-sheet-close': true }, ic('close', 14, 2.6))),
+        el('label', { for: 'ownEditReading' }, `קריאה של ${kid}`), input,
+        el('label', { for: 'ownEditPhoto' }, 'תמונת מונה (לא חובה)'), photo, msg, save);
+      const sh = window.sheet.open({ id: 'ownEditSheet', labelledBy: titleId, content });
       // The reading the amber warning is about: its confirm button saves only that number.
       let pendingWarn = null;
+      input.addEventListener('input', () => { pendingWarn = null; msg.replaceChildren(); });
 
       async function doSave(reading) {
         save.disabled = true;
         msg.replaceChildren(el('div', { class: 'hint' }, 'שומר...'));
         try {
           const file = photo.files && photo.files[0] ? await preparePhoto(photo.files[0], rules) : null;
-          await store.saveOwnerReading(model.id, k.kid, reading, file);
+          await store.saveOwnerReading(model.id, kid, reading, file);
+          sh.close();
           await ctx.reload();
         } catch (e) {
           save.disabled = false;
@@ -327,19 +387,14 @@
       }
 
       save.addEventListener('click', () => {
-        const { confirmApplies } = rules;
         const reading = rules.parseReadingInput(input.value);
         if (reading == null || reading <= 0) {
           msg.replaceChildren(el('div', { class: 'msg err' }, MSG_BAD_READING));
           return;
         }
         // Same previous as saveOwnerReading: the last published period's reading, else the baseline.
-        const kidRow = (state.kids || []).find((x) => x.name === k.kid);
-        const lastPub = (state.history || [])[(state.history || []).length - 1];
-        const prevReading = lastPub && lastPub.kids[k.kid] && lastPub.kids[k.kid].reading != null
-          ? lastPub.kids[k.kid].reading : (kidRow ? kidRow.lastReading : 0);
         const v = kidValidationInput({
-          history: state.history, kid: k.kid, previous: prevReading,
+          history: state.history, kid, previous: ownerPrevious(state, kid),
           today: israelDate(new Date().toISOString()),
         });
         const check = rules.validateReading({
@@ -353,45 +408,48 @@
           msg.replaceChildren(
             el('div', { class: 'msg warn' }, check.message),
             el('button', {
-              class: 'secondary own-confirm',
-              onclick: () => { if (confirmApplies(pendingWarn, reading)) doSave(reading); },
+              class: 'btn warn own-confirm', type: 'button',
+              onclick: () => { if (rules.confirmApplies(pendingWarn, reading)) doSave(reading); },
             }, MSG_CONFIRM));
           return;
         }
         // Blocked: the owner may still save, but only after saying he checked this number.
         msg.replaceChildren(
           el('div', { class: 'msg err' }, check.message),
-          el('button', { class: 'secondary own-override', onclick: () => doSave(reading) }, MSG_OVERRIDE));
+          el('button', { class: 'btn secondary own-override', type: 'button', onclick: () => doSave(reading) }, MSG_OVERRIDE));
       });
-      return form;
+      return sh;
     }
 
     function kidRow(kid) {
-      const k = model ? model.kids.find((x) => x.kid === kid) : null;
-      let stateText = null;
-      if (k) {
-        stateText = k.done
-          ? `✅ ${fmtSubmittedAt(k.at)} · ${k.reading}${k.by === 'owner' ? ' · הוזן ידנית' : ''}`
-          : '⏳ ממתין';
-      }
-      const form = model && model.status !== 'published' ? entryForm(k) : null;
-      const btns = el('div', { class: 'own-btns' },
-        k && k.photo ? el('button', {
-          class: 'secondary own-sm own-photo-btn',
-          onclick: async () => {
-            try { window.open(await store.signedUrl(k.photo.storage_path), '_blank'); }
-            catch (e) { showErr('פתיחת התמונה נכשלה: ' + errMsg(e)); }
-          },
-        }, '📷 תמונה') : null,
-        form ? el('button', {
-          class: 'secondary own-sm own-edit',
-          onclick: () => { form.hidden = !form.hidden; if (!form.hidden) form.querySelector('.own-reading').focus(); },
-        }, k.done ? '✏️ תיקון' : '✏️ הזנה') : null);
+      const k = model.kids.find((x) => x.kid === kid);
+      const editable = model.status !== 'published';
       return el('div', { class: 'own-kid', 'data-kid': kid },
-        el('div', { class: 'own-top' },
-          el('span', { class: 'own-name' }, kid),
-          stateText ? el('span', { class: 'own-state' }, stateText) : null),
-        btns, form);
+        el('span', { class: 'own-name' }, kid),
+        el('span', { class: 'own-state' + (k.done ? ' done' : '') }, ic(k.done ? 'check' : 'clock', 14, 2.4),
+          el('span', {}, kidStatusText(k))),
+        el('span', { class: 'own-btns' },
+          k.photo ? el('button', {
+            class: 'btn sm secondary own-photo-btn', type: 'button',
+            onclick: async () => {
+              try { window.open(await store.signedUrl(k.photo.storage_path), '_blank'); }
+              catch (e) { showErr('פתיחת התמונה נכשלה: ' + errMsg(e)); }
+            },
+          }, ic('photo', 14), 'תמונה') : null,
+          editable ? el('button', { class: 'btn sm secondary own-edit', type: 'button', onclick: () => openEdit(kid) },
+            ic('edit', 14), k.done ? 'תיקון' : 'הזנה') : null));
+    }
+
+    function kidStatusText(k) {
+      if (!k.done) return 'ממתין';
+      return `${fmtSubmittedAt(k.at)} · ${k.reading}${k.by === 'owner' ? ' · הוזן ידנית' : ''}`;
+    }
+
+    function checksList() {
+      return el('div', { class: 'ck-list', id: 'ownBills' }, ...approveChecks(model).map((c) =>
+        el('div', { class: 'ck' + (c.ok ? '' : ' no'), 'data-check': c.key },
+          el('i', { 'aria-hidden': 'true' }, c.ok ? ic('check', 11, 3.4) : ic('clock', 11, 3)),
+          el('span', {}, c.text))));
     }
 
     // rethrow: the approve flow reports its own message after a successful publish.
@@ -406,40 +464,37 @@
       }
     }
 
-    const children = [];
-    children.push(el('div', { class: 'own-head' },
-      el('h2', {}, model ? `🗂️ מחזור נוכחי · ${model.label}` : '🗂️ מחזור נוכחי'),
-      el('div', { class: 'own-status', id: 'ownStatus' }, model ? `סטטוס: ${model.statusText}` : 'אין מחזור פתוח כרגע')));
-
-    if (model) KIDS.forEach((kid) => children.push(kidRow(kid)));
-
-    if (model) {
-      const notes = [];
-      if (model.missing.includes('tariff')) notes.push('חסר תעריף');
-      if (model.missing.includes('water_total')) notes.push('חסר סכום מים');
-      children.push(el('div', { class: 'own-bills', id: 'ownBills' },
-        `חשבון חשמל ${model.bills.electricity ? '✅' : '⏳'} · חשבון מים ${model.bills.water ? '✅' : '⏳'}`
-        + (notes.length ? ' · ' + notes.join(' · ') : '')));
-    }
-
-    children.push(familySection());
-
-    const actions = el('div', { class: 'own-actions' });
-    if (model && model.status === 'open') {
-      actions.append(el('button', {
-        class: 'secondary', id: 'ownRemind',
-        onclick: async () => {
-          try { showWa(reminderText(await familyLink())); }
-          catch (e) { showErr('הקישור לא נטען, נסו שוב: ' + errMsg(e)); }
-        },
-      }, '📣 שלח תזכורת'));
-    }
-    if (model && model.status !== 'published') {
-      const date = el('input', {
-        type: 'date', id: 'ownDate',
-        value: defaultReadingDate(active.readings) || israelDate(new Date().toISOString()),
+    function openApprove() {
+      const deps = { computeCycle: window.computeCycle, labelFromDate: rules.labelFromDate,
+        compareCycle: window.compareCycle, formatMessage: window.formatMessage };
+      const date = el('input', { type: 'date', id: 'ownDate',
+        value: defaultReadingDate(active.readings) || israelDate(new Date().toISOString()) });
+      const preview = el('div', { class: 'wa-preview', id: 'ownPreview' });
+      const rows = el('div', { id: 'ownApproveKids' });
+      const msg = el('div', { role: 'alert' });
+      const approve = el('button', { class: 'btn', id: 'ownApprove', type: 'button', disabled: !model.canApprove }, 'אשר ושלח');
+      const copy = el('button', { class: 'icon-btn', id: 'ownApproveCopy', type: 'button', 'aria-label': 'העתק קישור משפחתי',
+        title: 'העתק קישור משפחתי' }, ic('link', 20));
+      let sh = null;
+      function draw() {
+        const p = approvePreview({ state, readingDate: date.value, token: ctx.familyToken }, deps);
+        const readings = {};
+        if (p && p.ok) p.kids.forEach((k) => { readings[k.kid] = k.reading; });
+        rows.replaceChildren(...model.kids.map((k) => el('div', { class: 'appr-row', 'data-kid': k.kid },
+          el('b', {}, k.kid),
+          el('span', { class: 'num' }, k.done ? fmtN(readings[k.kid] != null ? readings[k.kid] : k.reading, 2) : 'ממתין'),
+          el('button', { class: 'link-btn own-fix', type: 'button', 'data-kid': k.kid,
+            onclick: () => { sh.close(); openEdit(k.kid); } }, k.done ? 'תיקון' : 'הזנה'))));
+        preview.replaceChildren(el('div', { class: 't' }, 'ההודעה לוואטסאפ'),
+          p && p.ok ? el('pre', { id: 'ownPreviewText' }, p.text) : el('div', { id: 'ownPreviewText' }, p ? p.error : ''));
+      }
+      date.addEventListener('change', draw);
+      copy.addEventListener('click', async () => {
+        if (await copyFamilyLink(null)) {
+          copy.replaceChildren(ic('check', 20));
+          setTimeout(() => copy.replaceChildren(ic('link', 20)), 1500);
+        }
       });
-      const approve = el('button', { id: 'ownApprove', disabled: !model.canApprove }, '✅ אשר ושלח');
       approve.addEventListener('click', async () => {
         if (!window.confirm(MSG_APPROVE)) return;
         approve.disabled = true;
@@ -448,28 +503,73 @@
           await store.publishCycle(model.id, date.value);
         } catch (e) {
           approve.disabled = false;
-          approve.textContent = '✅ אשר ושלח';
-          showErr('הפרסום נכשל: ' + errMsg(e));
+          approve.textContent = 'אשר ושלח';
+          msg.replaceChildren(el('div', { class: 'msg err', id: 'ownApproveErr' }, 'הפרסום נכשל: ' + errMsg(e)));
           return;
         }
+        sh.close();
         try {
           await ctx.reload();
           await sendReport(true);
         } catch (e) {
           showErr('פורסם; שליחת הדוח נכשלה, לחצו שלח דוח אחרון');
-        } finally {
-          approve.disabled = !model.canApprove;
-          approve.textContent = '✅ אשר ושלח';
         }
       });
-      actions.append(el('label', { for: 'ownDate' }, 'תאריך הקריאה'), date, approve);
-      if (!model.canApprove) actions.append(el('div', { class: 'hint' }, 'האישור יתאפשר כשכל הקריאות והחשבונות יגיעו'));
+      const content = el('div', { class: 'approve' },
+        el('div', { class: 'sheet-head' },
+          el('div', {}, el('h2', { id: 'ownApproveTitle' }, 'אישור ושליחה'), el('div', { class: 'muted' }, model.label)),
+          el('button', { class: 'icon-btn sm', type: 'button', 'aria-label': 'סגירה', 'data-sheet-close': true }, ic('close', 14, 2.6))),
+        checksList(),
+        rows,
+        el('label', { for: 'ownDate' }, 'תאריך הקריאה'), date,
+        preview,
+        model.canApprove ? null : el('div', { class: 'hint' }, 'האישור יתאפשר כשכל הקריאות והחשבונות יגיעו'),
+        msg,
+        el('div', { class: 'appr-actions' }, approve, copy));
+      draw();
+      sh = window.sheet.open({ id: 'ownApproveSheet', labelledBy: 'ownApproveTitle', content });
+      return sh;
     }
-    actions.append(el('button', {
-      class: 'secondary', id: 'ownReport',
-      onclick: () => sendReport(),
-    }, '📤 שלח דוח אחרון'));
-    children.push(actions, out);
+
+    const children = [];
+    children.push(el('div', { class: 'own-head' },
+      el('div', {}, el('div', { class: 'lbl' }, model ? `מחזור נוכחי · ${model.label}` : 'מחזור נוכחי')),
+      el('span', { class: 'pill', id: 'ownStatus' }, model ? model.statusText : 'אין מחזור פתוח כרגע')));
+    // Bills, tariff and water total come only from email: say plainly what is still missing.
+    if (model && model.missing.length) {
+      const notes = [];
+      if (model.missing.includes('tariff')) notes.push('חסר תעריף');
+      if (model.missing.includes('water_total')) notes.push('חסר סכום מים');
+      children.push(el('div', { class: 'msg warn', id: 'ownMissing', role: 'status' }, notes.join(' · ')));
+    }
+
+    if (model) {
+      children.push(el('div', { class: 'tiles3', id: 'ownTiles' }, ...model.kids.map((k) => {
+        const used = k.done ? Math.round(k.reading - ownerPrevious(state, k.kid)) : null;
+        return el('div', { class: 'tile', 'data-kid': k.kid }, el('div', { class: 'v' }, fmtN(used)),
+          el('div', { class: 'l' }, `${k.kid} · קוט"ש`));
+      })));
+      KIDS.forEach((kid) => children.push(kidRow(kid)));
+      children.push(checksList());
+    }
+
+    const actions = el('div', { class: 'btns own-actions' });
+    if (model && model.status !== 'published') {
+      actions.append(el('button', { class: 'btn', id: 'ownApproveOpen', type: 'button', onclick: openApprove },
+        ic('check', 18, 2.4), 'אישור ושליחה'));
+    }
+    if (model && model.status === 'open') {
+      actions.append(el('button', {
+        class: 'btn secondary', id: 'ownRemind', type: 'button',
+        onclick: async () => {
+          try { showWa(reminderText(await familyLink())); }
+          catch (e) { showErr('הקישור לא נטען, נסו שוב: ' + errMsg(e)); }
+        },
+      }, ic('bell', 18), 'שלח תזכורת'));
+    }
+    actions.append(el('button', { class: 'btn secondary', id: 'ownReport', type: 'button', onclick: () => sendReport() },
+      ic('send', 18), 'שלח דוח אחרון'));
+    children.push(actions, out, familySection());
 
     host.replaceChildren(el('div', { class: 'card', id: 'ownerCard' }, ...children));
   }
@@ -477,6 +577,7 @@
   const api = {
     whatsappUrl, familyUrl, reminderText, reportText, shortLink, planPublish, previousByKid, statusModel, reportResults,
     defaultReadingDate, fmtSubmittedAt, kidValidationInput, renderOwnerCard,
+    approveChecks, ownerPrevious, approvePreview,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ownerCycle = api;

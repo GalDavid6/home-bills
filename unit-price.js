@@ -11,7 +11,9 @@ function _row(label, valueStr, pct, prevStr, tooltip) {
   let delta = '';
   if (pct !== null && pct !== undefined) {
     const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'zero';
-    const arrow = pct > 0 ? '▲ +' : pct < 0 ? '▼ ' : '';
+    // SVG arrow in the browser (icons.js); plain sign only when run under Node.
+    const svg = (n) => (typeof window !== 'undefined' && window.icons ? window.icons.str(n, 12, 2.4) + ' ' : '');
+    const arrow = pct > 0 ? svg('up') + '+' : pct < 0 ? svg('down') : '';
     delta = `<span class="uc-delta ${cls}">${arrow}${pct}%</span>` +
             `<span class="uc-prev">(היה ${prevStr})</span>`;
   }
@@ -27,7 +29,7 @@ function unitPriceBlockHtml(cur, prev) {
   if (cur.tariff != null) {
     const pv = prev && prev.tariff != null ? Number(prev.tariff) : null;
     const pct = pv != null ? _pctChange(Number(cur.tariff), pv) : null;
-    rows.push(_row('⚡ חשמל', `${cur.tariff} ₪/קוט"ש`, pct, pv));
+    rows.push(_row('חשמל', `${cur.tariff} ₪/קוט"ש`, pct, pv));
   }
 
   const wCur = (cur.waterTariff != null && cur.sewageTariff != null)
@@ -36,12 +38,12 @@ function unitPriceBlockHtml(cur, prev) {
     ? round2(Number(prev.waterTariff) + Number(prev.sewageTariff)) : null;
   if (wCur != null) {
     const pct = wPrev != null ? _pctChange(wCur, wPrev) : null;
-    rows.push(_row('💧 מים', `${wCur} ₪/מ"ק`, pct, wPrev,
+    rows.push(_row('מים', `${wCur} ₪/מ"ק`, pct, wPrev,
       `מים ${cur.waterTariff} + ביוב ${cur.sewageTariff}`));
   }
 
   if (!rows.length) return '';
-  return `<div class="unit-cmp"><div class="uc-head">מחיר ליחידה — מול המחזור הקודם</div>` +
+  return `<div class="unit-cmp"><div class="uc-head">מחיר ליחידה, מול המחזור הקודם</div>` +
          `${rows.join('')}</div>`;
 }
 
