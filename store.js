@@ -166,7 +166,7 @@ async function readFamilyLink() {
 }
 
 async function insertFamilyLink() {
-  const { generateToken, hashToken } = await import('./tokens.mjs');
+  const { generateToken, hashToken } = await import('./tokens.mjs?v=4f6410d');
   const token = generateToken();
   const { error } = await _sb.from('access_links')
     .insert({ kind: 'family', kid: null, token, token_hash: await hashToken(token) });
@@ -204,7 +204,7 @@ const MSG_CYCLE_EXISTS = 'כבר יש מחזור פתוח';
 // set explicitly: the column default is 'published', which would show an empty cycle to
 // the family. Bill fields stay empty until the owner fills them in the card.
 async function openCycleManually(todayIso) {
-  const { labelFromDate } = await import('./rules.mjs');
+  const { labelFromDate } = await import('./rules.mjs?v=4f6410d');
   const { data: act, error: e0 } = await _sb.from('periods').select('id').neq('status', 'published').limit(1);
   if (e0) throw e0;
   if (act && act.length) throw new Error(MSG_CYCLE_EXISTS);
@@ -252,7 +252,7 @@ async function previousReadings() {
 // Same rule as the family function: open -> ready once all three readings, both bills,
 // the tariff and the water total are in. Never moves a cycle backwards or past ready.
 async function markReadyIfComplete(periodId) {
-  const { cycleReadiness } = await import('./rules.mjs');
+  const { cycleReadiness } = await import('./rules.mjs?v=4f6410d');
   const [p, r, d] = await Promise.all([
     _sb.from('periods').select('status, tariff, water_total').eq('id', periodId).single(),
     _sb.from('electricity_readings').select('kid').eq('period_id', periodId).not('current_reading', 'is', null),
@@ -324,7 +324,7 @@ async function saveOwnerReading(periodId, kid, reading, file) {
 // status flips last and only from 'ready'. A retry after a partial failure recomputes from
 // the same previous readings, so it gives the same (or the corrected) numbers.
 async function publishCycle(periodId, readingDate) {
-  const { labelFromDate } = await import('./rules.mjs');
+  const { labelFromDate } = await import('./rules.mjs?v=4f6410d');
   const { data: period, error: ep } = await _sb.from('periods').select('*').eq('id', periodId).single();
   if (ep) throw ep;
   if (period.status !== 'ready') throw new Error('אפשר לאשר רק מחזור שמוכן לאישור');
