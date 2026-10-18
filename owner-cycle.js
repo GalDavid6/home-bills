@@ -262,7 +262,10 @@
       try { window.open(url, '_blank'); } catch (e) { /* the button stays */ }
     }
 
-    async function issue(kind, kid, copyNow) {
+    // One button per link: links are stored as hashes only, so "copy" always means a new link.
+    // Copies right away; the link is also shown once with a copy button in case the clipboard
+    // is refused (common after the async issue on phones).
+    async function issue(kind, kid) {
       if (hasLink(kind, kid) && !window.confirm(MSG_REPLACE)) return;
       try {
         const token = await store.issueLink(kind, kid);
@@ -270,10 +273,8 @@
         const url = linkUrl(kind, token);
         rerender();
         showLink(kind === 'report' ? 'קישור לדוח' : `הקישור של ${kid}`, url);
-        if (copyNow) {
-          try { await navigator.clipboard.writeText(url); document.getElementById('ownLinkCopy').textContent = 'הועתק ✓'; }
-          catch (e) { /* the copy button stays */ }
-        }
+        try { await navigator.clipboard.writeText(url); document.getElementById('ownLinkCopy').textContent = 'הועתק ✓'; }
+        catch (e) { /* the copy button stays */ }
       } catch (e) { showErr('יצירת הקישור נכשלה: ' + errMsg(e)); }
     }
 
@@ -289,8 +290,7 @@
 
     function linkButtons(kind, kid) {
       return [
-        el('button', { class: 'secondary own-sm own-copy', onclick: () => issue(kind, kid, true) }, 'העתק קישור'),
-        el('button', { class: 'secondary own-sm own-new', onclick: () => issue(kind, kid, false) }, 'קישור חדש'),
+        el('button', { class: 'secondary own-sm own-link', onclick: () => issue(kind, kid) }, 'קישור'),
         hasLink(kind, kid) ? el('button', { class: 'secondary own-sm own-revoke', onclick: () => revoke(kind, kid) }, 'בטל קישור') : null,
       ];
     }
