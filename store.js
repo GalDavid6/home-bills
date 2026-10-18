@@ -106,6 +106,14 @@ async function uploadDocument(periodId, kind, kid, file) {
   const up = await _sb.storage.from('documents').upload(path, file, { upsert: true });
   if (up.error) throw up.error;
   const label = kind === 'water_bill' ? 'חשבון מים' : kind === 'electricity_bill' ? 'חשבון חשמל' : `מונה ${kid || ''}`.trim();
+  // One row per document, as saveProviderBill and the ingest's attachBill keep it: a re-upload
+  // replaces the row. A cycle bill is one per period and kind, even when the extension changes.
+  const isBill = !kid && (kind === 'electricity_bill' || kind === 'water_bill');
+  const del = isBill
+    ? _sb.from('documents').delete().eq('period_id', periodId).eq('kind', kind)
+    : _sb.from('documents').delete().eq('storage_path', path);
+  const { error: ed } = await del;
+  if (ed) throw ed;
   const { error } = await _sb.from('documents').insert({ period_id: periodId, kind, kid: kid || null, storage_path: path, label });
   if (error) throw error;
 }
@@ -166,7 +174,7 @@ async function readFamilyLink() {
 }
 
 async function insertFamilyLink() {
-  const { generateToken, hashToken } = await import('./tokens.mjs?v=55ba2bd');
+  const { generateToken, hashToken } = await import('./tokens.mjs?v=6cc425d8');
   const token = generateToken();
   const { error } = await _sb.from('access_links')
     .insert({ kind: 'family', kid: null, token, token_hash: await hashToken(token) });
@@ -204,7 +212,7 @@ const MSG_CYCLE_EXISTS = 'כבר יש מחזור פתוח';
 // set explicitly: the column default is 'published', which would show an empty cycle to
 // the family. Bill fields stay empty until the owner fills them in the card.
 async function openCycleManually(todayIso) {
-  const { labelFromDate } = await import('./rules.mjs?v=55ba2bd');
+  const { labelFromDate } = await import('./rules.mjs?v=22ae56ce');
   const { data: act, error: e0 } = await _sb.from('periods').select('id').neq('status', 'published').limit(1);
   if (e0) throw e0;
   if (act && act.length) throw new Error(MSG_CYCLE_EXISTS);
@@ -220,9 +228,20 @@ async function openCycleManually(todayIso) {
 
 // Owner entry of the tariff and the water bill total on the active cycle. Never writes
 // status itself; readiness then decides open -> ready as for any other input.
+// A ready cycle is complete: clearing either amount would leave it 'ready' while incomplete
+// (nothing moves a cycle back to open), so that is refused; correcting a value is allowed.
+const MSG_READY_NEEDS_AMOUNTS = 'המחזור מוכן לאישור: אי אפשר למחוק את התעריף או את סכום חשבון המים';
+
 async function saveCycleAmounts(periodId, { tariff, waterTotal }) {
+  const clearing = tariff == null || waterTotal == null;
+  if (clearing) {
+    const { data: per, error: ep } = await _sb.from('periods').select('status').eq('id', periodId).single();
+    if (ep) throw ep;
+    if (per.status === 'ready') throw new Error(MSG_READY_NEEDS_AMOUNTS);
+  }
+  // When clearing, the write is also limited to 'open' so a cycle that turned ready meanwhile is not emptied.
   const { data, error } = await _sb.from('periods').update({ tariff, water_total: waterTotal })
-    .eq('id', periodId).in('status', ['open', 'ready']).select('id');
+    .eq('id', periodId).in('status', clearing ? ['open'] : ['open', 'ready']).select('id');
   if (error) throw error;
   if (!data || data.length !== 1) throw new Error('המחזור כבר פורסם, אי אפשר לשנות');
   await markReadyIfComplete(periodId);
@@ -252,7 +271,7 @@ async function previousReadings() {
 // Same rule as the family function: open -> ready once all three readings, both bills,
 // the tariff and the water total are in. Never moves a cycle backwards or past ready.
 async function markReadyIfComplete(periodId) {
-  const { cycleReadiness } = await import('./rules.mjs?v=55ba2bd');
+  const { cycleReadiness } = await import('./rules.mjs?v=22ae56ce');
   const [p, r, d] = await Promise.all([
     _sb.from('periods').select('status, tariff, water_total').eq('id', periodId).single(),
     _sb.from('electricity_readings').select('kid').eq('period_id', periodId).not('current_reading', 'is', null),
@@ -324,7 +343,7 @@ async function saveOwnerReading(periodId, kid, reading, file) {
 // status flips last and only from 'ready'. A retry after a partial failure recomputes from
 // the same previous readings, so it gives the same (or the corrected) numbers.
 async function publishCycle(periodId, readingDate) {
-  const { labelFromDate } = await import('./rules.mjs?v=55ba2bd');
+  const { labelFromDate } = await import('./rules.mjs?v=22ae56ce');
   const { data: period, error: ep } = await _sb.from('periods').select('*').eq('id', periodId).single();
   if (ep) throw ep;
   if (period.status !== 'ready') throw new Error('אפשר לאשר רק מחזור שמוכן לאישור');

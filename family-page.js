@@ -3,7 +3,7 @@
 //   #f=<token>  (the one family link): index.html renders the report; this module adds the
 //               "new cycle open" card on top, the kid chooser and the same single-kid flow.
 // The token lives in memory only (never storage, never a URL query, never logged).
-import { parseReadingInput, validateReading, confirmApplies, checkPhoto, familyUpdateCard } from './rules.mjs?v=55ba2bd';
+import { parseReadingInput, validateReading, confirmApplies, checkPhoto, familyUpdateCard } from './rules.mjs?v=22ae56ce';
 
 const MSG_UNAUTHORIZED = 'הקישור אינו בתוקף';
 const MSG_NETWORK = 'אין חיבור, נסו שוב';
