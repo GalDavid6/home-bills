@@ -87,7 +87,7 @@ async function uploadDocument(periodId, kind, kid, file) {
   const up = await _sb.storage.from('documents').upload(path, file, { upsert: true });
   if (up.error) throw up.error;
   const label = kind === 'water_bill' ? 'חשבון מים' : kind === 'electricity_bill' ? 'חשבון חשמל' : `מונה ${kid || ''}`.trim();
-  // One row per document, as saveProviderBill and the ingest's attachBill keep it: a re-upload
+  // One row per document, as the ingest's attachBill keeps it: a re-upload
   // replaces the row. A cycle bill is one per period and kind, even when the extension changes.
   const isBill = !kid && (kind === 'electricity_bill' || kind === 'water_bill');
   const del = isBill
@@ -98,28 +98,6 @@ async function uploadDocument(periodId, kind, kid, file) {
   const { error } = await _sb.from('documents').insert({ period_id: periodId, kind, kid: kid || null, storage_path: path, label });
   if (error) throw error;
 }
-
-// Upsert one provider's monthly amount and (optionally) archive its PDF.
-// provider: 'bezeq'|'yes'; month: 'YYYY-MM'; amount: Number|null; file: File|null.
-async function saveProviderBill(provider, month, amount, file) {
-  const row = { month, updated_at: new Date().toISOString() };
-  if (amount != null && !isNaN(amount)) row[provider] = Number(amount);
-  const { error: e1 } = await _sb.from('other_bills').upsert(row, { onConflict: 'month' });
-  if (e1) throw e1;
-  if (file) {
-    const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
-    const path = `other/${provider}/${month}.${ext}`;
-    const up = await _sb.storage.from('documents').upload(path, file, { upsert: true });
-    if (up.error) throw up.error;
-    // Remove any prior row for this exact path, then insert (keeps one doc per provider-month).
-    await _sb.from('documents').delete().eq('storage_path', path);
-    const { error: e2 } = await _sb.from('documents').insert(
-      { period_id: null, kind: provider, kid: null, storage_path: path, label: month });
-    if (e2) throw e2;
-  }
-}
-
-async function deleteProviderDoc(doc) { return deleteDocument(doc); }
 
 async function signedUrl(path) {
   if (_reportUrls) {
@@ -309,6 +287,6 @@ async function publishCycle(periodId, readingDate) {
 
 window.store = { initSupabase, loadState, loadStateViaReport, getSession, signInWithPassword, signOut,
   updatePassword, listDocuments, uploadDocument, signedUrl, deleteDocument,
-  saveProviderBill, deleteProviderDoc, KID_ORDER,
+  KID_ORDER,
   readFamilyLink, getFamilyLink, replaceFamilyLink,
   saveOwnerReading, publishCycle };

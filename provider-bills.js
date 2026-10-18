@@ -58,16 +58,6 @@ function parseInvoiceTotal(rawText, provider) {
   return { amount, month: billingMonth(text, provider) };
 }
 
-// Zip filename for a provider's archived PDFs, e.g. 'bezeq-2025-2026.zip'.
-function providerZipName(docs, provider) {
-  const years = (docs || [])
-    .map((d) => (d.label && /^(\d{4})-\d{2}$/.test(d.label)) ? d.label.slice(0, 4) : null)
-    .filter(Boolean).sort();
-  if (!years.length) return `${provider}.zip`;
-  const lo = years[0], hi = years[years.length - 1];
-  return lo === hi ? `${provider}-${lo}.zip` : `${provider}-${lo}-${hi}.zip`;
-}
-
 // Water bills list the water + sewage tariffs as 3-decimal numbers (e.g. 11.650, 4.780) in a
 // "פירוט תעריפים" table. The Hebrew labels extract as mojibake, but the digits are clean, so we key
 // off numeric shape: water ~11–12 ₪/m³, sewage ~4–5. Returns { water, sewage } | null. A mid-period
@@ -143,11 +133,9 @@ function parseWaterTotal(rawText) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseInvoiceTotal, providerZipName, parseWaterTariff, parseIecBill, parseWaterTotal, HE_MONTHS };
+  module.exports = { parseInvoiceTotal, parseWaterTariff, parseIecBill, parseWaterTotal, HE_MONTHS };
 }
 if (typeof window !== 'undefined') {
-  window.parseInvoiceTotal = parseInvoiceTotal;
-  window.providerZipName = providerZipName;
   window.parseWaterTariff = parseWaterTariff;
   window.parseIecBill = parseIecBill;
   window.parseWaterTotal = parseWaterTotal;
