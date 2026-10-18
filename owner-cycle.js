@@ -223,13 +223,13 @@
 
   let rulesPromise = null;
   function loadRules() {
-    if (!rulesPromise) rulesPromise = import('./rules.mjs?v=4f6410d');
+    if (!rulesPromise) rulesPromise = import('./rules.mjs?v=b3d2a2a');
     return rulesPromise;
   }
 
   async function preparePhoto(file, rules) {
     try {
-      const { downscaleImage } = await import('./family-page.js?v=4f6410d');
+      const { downscaleImage } = await import('./family-page.js?v=b3d2a2a');
       const blob = await downscaleImage(file);
       return new File([blob], 'meter.jpg', { type: 'image/jpeg' });
     } catch (e) {

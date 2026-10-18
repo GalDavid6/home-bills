@@ -3,7 +3,7 @@
 //   #f=<token>  (the one family link): index.html renders the report; this module adds the
 //               "new cycle open" card on top, the kid chooser and the same single-kid flow.
 // The token lives in memory only (never storage, never a URL query, never logged).
-import { parseReadingInput, validateReading, checkPhoto, familyUpdateCard } from './rules.mjs?v=4f6410d';
+import { parseReadingInput, validateReading, checkPhoto, familyUpdateCard } from './rules.mjs?v=b3d2a2a';
 
 const MSG_UNAUTHORIZED = 'הקישור אינו בתוקף';
 const MSG_NETWORK = 'אין חיבור, נסו שוב';
@@ -207,23 +207,15 @@ export function startFamilyPage(token, { family = false } = {}) {
   }
 
   function form() {
-    // Two inputs feed one handler: the camera one forces the camera on iOS (capture), the gallery one has
-    // no capture attribute so iOS offers the photo library.
+    // One input, no capture attribute: iOS then offers Take Photo / Photo Library / Choose File and Android
+    // shows its chooser, so the user picks camera or gallery without two buttons.
     const fileInput = el('input', {
-      type: 'file', accept: 'image/*', capture: 'environment', id: 'famFile', class: 'fam-file',
-      onchange: onFile,
-    });
-    const galleryInput = el('input', {
-      type: 'file', accept: 'image/*', id: 'famGalleryFile', class: 'fam-file',
-      onchange: onFile,
+      type: 'file', accept: 'image/*', id: 'famFile', class: 'fam-file', onchange: onFile,
     });
     const shoot = el('button', {
       class: 'fam-btn', id: 'famShoot', type: 'button', onclick: () => fileInput.click(),
-    }, '📸 צלם');
-    const gallery = el('button', {
-      class: 'secondary fam-btn', id: 'famGallery', type: 'button', onclick: () => galleryInput.click(),
-    }, '🖼️ בחר מהגלריה');
-    const kids = [fileInput, galleryInput, el('div', { class: 'fam-actions' }, shoot, gallery)];
+    }, '📸 צילום או תמונה');
+    const kids = [fileInput, el('div', { class: 'fam-actions' }, shoot)];
     if (previewUrl) kids.push(el('img', { class: 'fam-photo', id: 'famPreview', src: previewUrl, alt: '' }));
     kids.push(
       el('label', { for: 'famReading' }, 'קריאת המונה'),
