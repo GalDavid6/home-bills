@@ -36,5 +36,4 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 if (typeof window !== 'undefined') {
   window.rowsToState = rowsToState;
-  window.cycleToRows = cycleToRows;
 }

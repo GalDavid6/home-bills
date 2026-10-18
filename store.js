@@ -62,25 +62,6 @@ async function loadStateViaReport(token) {
   return st;
 }
 
-// Inserts the period + its readings and upserts baselines. Requires auth (RLS).
-// The manual flow is a fallback for when no cycle is open: with an open or ready cycle it
-// would publish a second period beside it, so it refuses.
-async function saveCycle(results, readingDate, baselineByName) {
-  const { data: act, error: e0 } = await _sb.from('periods').select('id').neq('status', 'published').limit(1);
-  if (e0) throw e0;
-  if (act && act.length) throw new Error('יש מחזור פתוח: יש להשלים אותו בכרטיס המחזור');
-  const { period, readings } = window.cycleToRows(results, readingDate);
-  const { data: inserted, error: e1 } = await _sb.from('periods').insert(period).select().single();
-  if (e1) throw e1;
-  const rows = readings.map((r) =>
-    Object.assign({ period_id: inserted.id, current_reading: baselineByName[r.kid] ?? null }, r));
-  const { error: e2 } = await _sb.from('electricity_readings').insert(rows);
-  if (e2) throw e2;
-  const baseRows = KID_ORDER.map((name) => ({ kid: name, last_reading: baselineByName[name] }));
-  const { error: e3 } = await _sb.from('baselines').upsert(baseRows);
-  if (e3) throw e3;
-}
-
 async function getSession() {
   const { data } = await _sb.auth.getSession();
   return data.session;
@@ -326,7 +307,7 @@ async function publishCycle(periodId, readingDate) {
   return plan;
 }
 
-window.store = { initSupabase, loadState, loadStateViaReport, saveCycle, getSession, signInWithPassword, signOut,
+window.store = { initSupabase, loadState, loadStateViaReport, getSession, signInWithPassword, signOut,
   updatePassword, listDocuments, uploadDocument, signedUrl, deleteDocument,
   saveProviderBill, deleteProviderDoc, KID_ORDER,
   readFamilyLink, getFamilyLink, replaceFamilyLink,

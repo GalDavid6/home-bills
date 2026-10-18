@@ -62,7 +62,6 @@
     }
     input:focus, .docs .upload select:focus { outline:none; border-color:var(--terra);
       box-shadow:0 0 0 3px rgba(197,107,62,.16); }
-    .kid-row { border-top:1px dashed var(--line); padding-top:12px; margin-top:14px; }
 
     button {
       width:100%; padding:13px; font-size:1rem; font-family:'Rubik',sans-serif; font-weight:600;
@@ -266,7 +265,7 @@
     .family-mode #recoveryView, .family-mode #authBar { display:none !important; }
     /* Report link (#r=): the viewer's report, read-only. Editor-only blocks stay hidden. */
     .report-mode #welcomeView, .report-mode #recoveryView, .report-mode #authBar,
-    .report-mode #inputCard, .report-mode #backupCard, .report-mode #providerEntry,
+    .report-mode #backupCard, .report-mode #providerEntry,
     .report-mode #logoutBtn { display:none !important; }
     .doc-off { color:var(--muted); opacity:.55; cursor:not-allowed; }
     .fam-card { text-align:center; }
@@ -370,25 +369,6 @@
   <div id="homeView">
     <div id="famUpdateHost"></div>
     <div id="ownerHost"></div>
-    <div class="card" id="inputCard">
-      <label>תקופה</label>
-      <input id="period" placeholder="חודש ושנה (למשל אוקטובר 2026)" />
-      <label>סכום חשבון מים (₪)</label>
-      <input id="waterTotal" type="number" inputmode="decimal" />
-      <label>תעריף לקוט"ש (₪)</label>
-      <input id="tariff" type="number" inputmode="decimal" step="0.01" />
-      <div id="kids"></div>
-      <button id="calcBtn">חשב</button>
-      <div id="validation"></div>
-    </div>
-
-    <div class="card" id="resultCard" style="display:none">
-      <table id="resultTable"></table>
-      <pre id="message"></pre>
-      <button id="copyBtn">העתק הודעה ל-WhatsApp</button>
-      <button id="saveBtn" class="secondary">שמור מחזור (קריאות → קודמות)</button>
-    </div>
-
     <div id="latest"></div>
 
     <div class="card" id="trendCard" style="display:none">
@@ -450,12 +430,12 @@
   <script src="history.js?v=0a3e4933"></script>
   <script src="unit-price.js?v=e8913435"></script>
   <script src="meter-photos.js?v=9033820e"></script>
-  <script src="validate.js?v=2ac2b3b5"></script>
+  <script src="validate.js?v=10ff6f00"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=c229d27e"></script>
   <script type="module" src="family-page.js?v=e30aaaf8"></script>
-  <script src="store-map.js?v=29c99057"></script>
-  <script src="store.js?v=156d46c4"></script>
+  <script src="store-map.js?v=80e11b1a"></script>
+  <script src="store.js?v=5b316b04"></script>
   <script src="owner-cycle.js?v=99faec07"></script>
   <script src="provider-bills.js?v=06e10fa6"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
@@ -525,7 +505,6 @@
       state.documents = await window.store.listDocuments();
       applyAuthMode();
       if (window.IS_EDITOR) await renderOwner();
-      renderKidInputs();
       renderTrends();
       renderPeriods();
       renderWaterInsight();
@@ -537,21 +516,6 @@
         applyView();
       });
       applyView();
-    }
-
-    function renderKidInputs() {
-      const c = document.getElementById('kids');
-      c.innerHTML = '';
-      state.kids.forEach((k, i) => {
-        const row = document.createElement('div');
-        row.className = 'kid-row';
-        row.innerHTML =
-          `<label>${k.name} — קריאה קודמת</label>` +
-          `<input class="prevInput" type="number" inputmode="decimal" data-i="${i}" value="${k.lastReading}" />` +
-          `<label>${k.name} — קריאה נוכחית</label>` +
-          `<input class="curInput" type="number" inputmode="decimal" data-i="${i}" />`;
-        c.appendChild(row);
-      });
     }
 
     // HTML-escape server/user strings (labels, storage paths) before they go into innerHTML.
@@ -742,12 +706,10 @@
       state = await window.store.loadState();
       state.documents = await window.store.listDocuments();
       if (ownerCtx) ownerCtx.familyToken = await window.store.readFamilyLink();
-      renderKidInputs();
       renderTrends();
       renderPeriods();
       renderWaterInsight();
       renderOtherBills();
-      syncManualFlow(window.IS_EDITOR);
       await renderOwner();
     }
 
@@ -800,19 +762,10 @@
       document.getElementById('rcInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
     }
 
-    // The manual cycle flow is the fallback for when no cycle is open; with an open or ready
-    // cycle it would publish a second period beside it (store.saveCycle refuses too).
-    function syncManualFlow(editor) {
-      const show = editor && !state.activeCycle;
-      document.getElementById('inputCard').style.display = show ? 'block' : 'none';
-      if (!show) { document.getElementById('resultCard').style.display = 'none'; lastResults = null; }
-    }
-
     function applyAuthMode() {
       document.getElementById('welcomeView').style.display = 'none';
       applyView(); // restores homeView/archiveView per hash
       const editor = session && session.user && session.user.id === window.CONFIG.OWNER_UID;
-      syncManualFlow(editor);
       document.getElementById('backupCard').style.display = editor ? 'block' : 'none';
       document.getElementById('providerEntry').style.display = editor ? 'block' : 'none';
       document.getElementById('authBar').innerHTML = ''; // logout icon now lives in the report header
@@ -1304,87 +1257,6 @@
         } catch (e) { alert('העלאה נכשלה: ' + (e.message || e)); btn.disabled = false; btn.textContent = 'העלה'; }
       }));
     }
-
-    let lastResults = null;
-
-    function pctCell(k) {
-      if (k.prevE === null || k.prevE === undefined) return '<td>—</td>';
-      const cls = k.pct >= 0 ? 'up' : 'down';
-      const sign = k.pct >= 0 ? '+' : '';
-      const flag = k.anomaly ? ' ⚠️' : '';
-      return `<td class="${cls}">${sign}${k.pct}%${flag}</td>`;
-    }
-
-    function renderValidation(errors, warnings) {
-      const host = document.getElementById('validation');
-      host.innerHTML =
-        errors.map((e) => `<div class="msg err">⛔ ${e}</div>`).join('') +
-        warnings.map((w) => `<div class="msg warn">⚠️ ${w}</div>`).join('');
-    }
-
-    document.getElementById('calcBtn').addEventListener('click', () => {
-      const period = document.getElementById('period').value.trim();
-      const waterTotal = parseFloat(document.getElementById('waterTotal').value);
-      const tariff = parseFloat(document.getElementById('tariff').value);
-      const prevInputs = document.querySelectorAll('#kids .prevInput');
-      const currentInputs = document.querySelectorAll('#kids .curInput');
-      const kids = state.kids.map((k, i) => ({
-        name: k.name,
-        prev: parseFloat(prevInputs[i].value) || 0,
-        current: parseFloat(currentInputs[i].value),
-      }));
-
-      const { errors, warnings } = window.validateCycle({ waterTotal, tariff, kids });
-      renderValidation(errors, warnings);
-      if (errors.length) {
-        document.getElementById('resultCard').style.display = 'none';
-        lastResults = null;
-        return;
-      }
-
-      const raw = window.computeCycle({ period, waterTotal, tariff, kids });
-      lastResults = window.compareCycle(raw, state.history);
-
-      const t = document.getElementById('resultTable');
-      t.innerHTML = '<tr><th>שם</th><th>חשמל</th><th>לעומת קודם</th><th>מים</th><th>סה"כ</th></tr>' +
-        lastResults.kids.map((k) =>
-          `<tr><td>${esc(k.name)}</td><td>${k.electricity}</td>${pctCell(k)}<td>${k.water}</td><td>${k.total}</td></tr>`
-        ).join('');
-      document.getElementById('message').textContent = window.formatMessage(lastResults);
-      document.getElementById('resultCard').style.display = 'block';
-    });
-
-    document.getElementById('copyBtn').addEventListener('click', async () => {
-      await navigator.clipboard.writeText(document.getElementById('message').textContent);
-      const b = document.getElementById('copyBtn');
-      const orig = b.textContent; b.textContent = 'הועתק ✓';
-      setTimeout(() => { b.textContent = orig; }, 1500);
-    });
-
-    document.getElementById('saveBtn').addEventListener('click', async () => {
-      if (!lastResults) return;
-      const currentInputs = document.querySelectorAll('#kids .curInput');
-      const baselineByName = {};
-      state.kids.forEach((k, i) => {
-        baselineByName[k.name] = parseFloat(currentInputs[i].value) || k.lastReading;
-      });
-      const readingDate = new Date().toISOString().slice(0, 10);
-      const resultsToSave = Object.assign({}, lastResults, { label: lastResults.period });
-      try {
-        await window.store.saveCycle(resultsToSave, readingDate, baselineByName);
-      } catch (e) { alert('שמירה נכשלה: ' + (e.message || e)); return; }
-      state = await window.store.loadState();
-      renderKidInputs();
-      renderTrends();
-      renderPeriods();
-      renderWaterInsight();
-      renderOtherBills();
-      lastResults = null;
-      document.getElementById('resultCard').style.display = 'none';
-      const b = document.getElementById('saveBtn');
-      const orig = b.textContent; b.textContent = 'נשמר ✓';
-      setTimeout(() => { b.textContent = orig; }, 1500);
-    });
 
     document.getElementById('exportBtn').addEventListener('click', () => {
       const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
