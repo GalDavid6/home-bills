@@ -66,6 +66,11 @@ async function getSession() {
   const { data } = await _sb.auth.getSession();
   return data.session;
 }
+// Supabase mails a one-time recovery link that returns to redirectTo with #...type=recovery.
+async function sendPasswordReset(email, redirectTo) {
+  return _sb.auth.resetPasswordForEmail(email, { redirectTo });
+}
+
 async function signInWithPassword(email, password) {
   return _sb.auth.signInWithPassword({ email, password });
 }
@@ -285,7 +290,7 @@ async function publishCycle(periodId, readingDate) {
   return plan;
 }
 
-window.store = { initSupabase, loadState, loadStateViaReport, getSession, signInWithPassword, signOut,
+window.store = { initSupabase, loadState, loadStateViaReport, getSession, signInWithPassword, sendPasswordReset, signOut,
   updatePassword, listDocuments, uploadDocument, signedUrl, deleteDocument,
   KID_ORDER,
   readFamilyLink, getFamilyLink, replaceFamilyLink,

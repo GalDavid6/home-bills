@@ -16,12 +16,18 @@
     if (/^#r=/.test(hash)) return 'report';
     if (hash === '#owner') return 'owner';
     if (/type=recovery/.test(hash)) return 'recovery';
+    // A used or expired email link comes back as #error=...&error_code=otp_expired.
+    if (/error_code=/.test(hash)) return 'linkError';
     return 'plain';
   }
   const ROUTE = routeOf(location.hash);
   document.documentElement.dataset.route = ROUTE;
   // Moving between routes (family -> #owner after sign-in, owner -> family) reloads cleanly.
-  window.addEventListener('hashchange', () => { if (routeOf(location.hash) !== ROUTE) location.reload(); });
+  // The recovery route is exempt: supabase-js clears the token hash once it has read it, and
+  // reloading then would drop Gal on the plain card before he can set the password.
+  window.addEventListener('hashchange', () => {
+    if (ROUTE !== 'recovery' && routeOf(location.hash) !== ROUTE) location.reload();
+  });
 
   // Dev-only (e2e): on localhost a test may swap in a fake store before boot.
   if (location.hostname === 'localhost' && window.__devStore) Object.assign(window.store, window.__devStore);
@@ -633,6 +639,27 @@
         el('button', { class: 'icon-btn sm', type: 'button', 'aria-label': 'סגירה', 'data-sheet-close': true }, ic('close', 14, 2.6))),
       el('label', { for: 'admEmail' }, 'אימייל'), email,
       el('label', { for: 'admPw' }, 'סיסמה'), pw, err, go);
+    const info = el('div', { class: 'msg', id: 'admInfo', role: 'status', hidden: true });
+    const forgot = el('button', { class: 'link-btn', id: 'admForgot', type: 'button' }, 'שכחתי סיסמה');
+    forgot.addEventListener('click', async () => {
+      err.hidden = true;
+      info.hidden = true;
+      if (!email.value.trim()) { err.textContent = 'נא למלא אימייל ואז ללחוץ שוב'; err.hidden = false; return; }
+      forgot.disabled = true;
+      try {
+        ensureSupabase();
+        const { error } = await window.store.sendPasswordReset(email.value.trim(), location.origin + location.pathname);
+        if (error) throw error;
+        info.textContent = 'נשלח קישור לאיפוס הסיסמה לאימייל. לפתוח אותו פעם אחת בלבד.';
+        info.hidden = false;
+      } catch (ex) {
+        err.textContent = 'לא הצלחתי לשלוח, נסו שוב בעוד כמה דקות';
+        err.hidden = false;
+      } finally {
+        forgot.disabled = false;
+      }
+    });
+    form.append(forgot, info);
     const sh = window.sheet.open({ id: 'adminSheet', labelledBy: 'admTitle', content: form });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -804,6 +831,11 @@
     bootOwner();
   } else if (ROUTE === 'recovery') {
     bootRecovery();
+  } else if (ROUTE === 'linkError') {
+    showMessage('הקישור כבר לא בתוקף', 'קישור מאימייל עובד פעם אחת בלבד', 'lock');
+    $('messageCard').id = 'linkErrorCard';
+    $('linkErrorCard').append(el('button', { class: 'btn', id: 'linkErrorLogin', type: 'button',
+      onclick: () => openLoginSheet(() => { location.hash = '#owner'; }) }, 'כניסת מנהל או קישור חדש'));
   } else if (ROUTE === 'meter') {
     setHeader('', 'חשבונות בית', []);
     $('app').classList.add('no-tabs');
